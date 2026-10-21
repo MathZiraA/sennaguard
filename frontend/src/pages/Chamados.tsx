@@ -1,37 +1,70 @@
 import { useState } from 'react'
-import { ChevronDown, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useApi, type Chamado, type Integridade } from '../lib/api'
+import { useSearchParams } from 'react-router-dom'
+import { ChevronDown, Plus, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { useApi, type ChamadoManual, type ListaChamados } from '../lib/api'
 import { dataHora, desde } from '../lib/fmt'
+import { useSessao } from '../lib/sessao'
 import { TrilhoMini } from '../components/Trilho'
-import { Card, Carregando, Led, Sev, Vazio } from '../components/ui'
+import { CATEGORIAS, DetalheChamado, IMPACTOS, NovoChamado, StatusChamado } from '../components/Atendimento'
+import Modal from '../components/Modal'
+import { Botao, Card, Carregando, Led, Sev, Vazio } from '../components/ui'
 
 export default function Chamados() {
-  const { dados } = useApi<{ chamados: Chamado[]; integridade: Integridade }>('/api/chamados', 30000)
+  const { dados, recarregar } = useApi<ListaChamados>('/api/chamados', 30000)
+  const { pode, eu } = useSessao()
+  const [params, setParams] = useSearchParams()
   const [aberto, setAberto] = useState<string | null>(null)
   if (!dados) return <Carregando />
-  const { chamados, integridade: ig } = dados
-  const abertos = chamados.filter(c => c.status === 'aberto').length
+  const { chamados, manuais } = dados
+  const ig = dados.integridade.ok ? dados.integridade_manuais : dados.integridade
+  const registros = dados.integridade.registros + dados.integridade_manuais.registros
+  const pendentes = manuais.filter(c => c.status !== 'resolvido').length + chamados.filter(c => c.status === 'aberto').length
+  const sel = params.get('sg')
+  const cliente = eu?.papel === 'Cliente'
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-[20px] font-semibold tracking-[-0.02em]">Chamados</h1>
-        <p className="mt-1 text-tinta-3">Quedas que passaram de 1 h viram um chamado NOC-xxx, com e-mail ao cliente e registro no livro encadeado.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em]">Chamados</h1>
+          <p className="mt-1 text-tinta-3">{cliente
+            ? 'Abra um chamado quando algo não estiver funcionando na Filial e acompanhe o atendimento aqui.'
+            : 'Chamados abertos pelas pessoas (SG-xxx) e os automáticos de quedas acima de 1 h (NOC-xxx).'}</p>
+        </div>
+        {pode('abrir_chamado') && <Botao variante="primario" onClick={() => setParams({ sg: 'novo' })}><Plus />Abrir chamado</Botao>}
       </div>
 
       <div className={`flex flex-wrap items-center gap-4 rounded-2xl border px-5 py-4 ${ig.ok ? 'border-led/25 bg-led/[0.06]' : 'border-desastre/40 bg-desastre/10'}`}>
         {ig.ok ? <ShieldCheck className="size-6 text-led" strokeWidth={1.7} /> : <ShieldAlert className="size-6 text-desastre" strokeWidth={1.7} />}
         <div>
-          <div className="font-semibold">{ig.ok ? 'Livro íntegro' : `Livro adulterado no registro ${ig.quebra}`}</div>
+          <div className="font-semibold">{ig.ok ? 'Histórico íntegro' : `Histórico adulterado no registro ${ig.quebra}`}</div>
           <div className="text-[12px] text-tinta-3">
-            {ig.ok ? `${ig.registros} registros, cadeia SHA-256 conferida do primeiro ao último.` : `${ig.motivo}. Os registros a partir dele não têm valor de prova.`}
+            {ig.ok ? `${registros} registros, cadeia SHA-256 conferida do primeiro ao último.` : `${ig.motivo}. Os registros a partir dele não têm valor de prova.`}
           </div>
         </div>
         <div className="num ml-auto flex gap-6 text-right">
-          <div><div className="text-[22px] font-semibold leading-none">{abertos}</div><div className="mt-1 text-[11px] text-tinta-3">abertos</div></div>
-          <div><div className="text-[22px] font-semibold leading-none text-tinta-2">{chamados.length - abertos}</div><div className="mt-1 text-[11px] text-tinta-3">encerrados</div></div>
+          <div><div className="text-[22px] font-semibold leading-none">{pendentes}</div><div className="mt-1 text-[11px] text-tinta-3">em andamento</div></div>
+          <div><div className="text-[22px] font-semibold leading-none text-tinta-2">{manuais.length + chamados.length - pendentes}</div><div className="mt-1 text-[11px] text-tinta-3">resolvidos</div></div>
         </div>
       </div>
+
+      <h2 className="mt-2 text-[13px] font-semibold text-tinta-2">{cliente ? 'Seus chamados' : 'Abertos pelas pessoas'}</h2>
+      {manuais.length === 0 ? <Vazio>Nenhum chamado aberto até agora.</Vazio> : (
+        <Card className="!p-0">
+          <ul>
+            {manuais.map(c => <LinhaManual key={c.id} c={c} onAbrir={() => setParams({ sg: String(c.id) })} />)}
+          </ul>
+        </Card>
+      )}
+
+      <h2 className="mt-2 text-[13px] font-semibold text-tinta-2">Automáticos: quedas acima de 1 h</h2>
+      <Modal lado={sel !== 'novo'} aberto={!!sel} onClose={() => setParams({})}
+        titulo={sel === 'novo' ? 'Abrir chamado' : manuais.find(c => String(c.id) === sel)?.titulo ?? 'Chamado'}
+        descricao={sel === 'novo' ? 'A equipe do NOC recebe na hora.' : `SG-${sel}`}>
+        {sel === 'novo'
+          ? <NovoChamado onCancelar={() => setParams({})} onCriado={c => { recarregar(); setParams({ sg: String(c.id) }) }} />
+          : sel && <DetalheChamado id={Number(sel)} onMudou={recarregar} />}
+      </Modal>
 
       {chamados.length === 0 ? <Vazio>Nenhum chamado. Quedas curtas (menos de 1 h) não geram chamado.</Vazio> : (
         <Card className="!p-0">
@@ -77,5 +110,21 @@ export default function Chamados() {
         </Card>
       )}
     </div>
+  )
+}
+
+function LinhaManual({ c, onAbrir }: { c: ChamadoManual; onAbrir: () => void }) {
+  return (
+    <li className="border-b border-fio last:border-0">
+      <button onClick={onAbrir} className="grid w-full grid-cols-[120px_minmax(0,1fr)_150px_150px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.02]">
+        <span className="font-mono text-[12px] font-medium text-media">{c.numero}</span>
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{c.titulo}</span>
+          <span className="text-[11px] text-tinta-3">{CATEGORIAS[c.categoria]} · {IMPACTOS[c.impacto].toLowerCase()} · {c.aberto_por_nome}</span>
+        </span>
+        <StatusChamado status={c.status} />
+        <span className="num text-right text-[12px] text-tinta-3">atualizado há {desde(c.atualizado_em)}</span>
+      </button>
+    </li>
   )
 }

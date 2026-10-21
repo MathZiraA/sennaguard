@@ -19,10 +19,10 @@ COOKIE_SEGURO = os.environ.get("COOKIE_SEGURO") == "1"  # 1 em produção (HTTPS
 
 # O que cada papel pode fazer. O cliente da Filial só vê o estado do enlace e os chamados.
 PERMISSOES = {
-    "Administrador": {"visao", "alertas", "reconhecer", "chamados", "equipamentos", "usuarios"},
-    "Analista": {"visao", "alertas", "reconhecer", "chamados", "equipamentos"},
-    "Operador": {"visao", "alertas", "reconhecer", "chamados", "equipamentos"},
-    "Cliente": {"visao", "chamados"},
+    "Administrador": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos", "usuarios"},
+    "Analista": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos"},
+    "Operador": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos"},
+    "Cliente": {"visao", "chamados", "abrir_chamado"},
 }
 
 

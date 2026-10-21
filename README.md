@@ -6,12 +6,23 @@ Painel do NOC do projeto [noc-senai-tcc](https://github.com/MathZiraA/noc-senai-
 
 | Perfil | Vê | Pode |
 | --- | --- | --- |
-| Administrador | tudo | reconhecer alertas, criar/editar/remover usuários, redefinir senhas |
-| Analista | enlace, alertas (com análise da IA), chamados, equipamentos | reconhecer alertas |
-| Operador | enlace, alertas, chamados, equipamentos | reconhecer alertas |
-| Cliente | estado do enlace e os chamados da Filial | só consultar |
+| Administrador | tudo | reconhecer alertas, atender chamados, criar/editar/remover usuários, redefinir senhas |
+| Analista | enlace, alertas (com análise da IA), chamados, equipamentos | reconhecer alertas, atender chamados |
+| Operador | enlace, alertas, chamados, equipamentos | reconhecer alertas, atender chamados |
+| Cliente | estado do enlace, os chamados automáticos e os que ele abriu | abrir chamados (SG-xxx) e responder |
 
 Senhas com scrypt, sessão em cookie `HttpOnly` + `SameSite=Strict` (12 h), bloqueio de 5 min após 5 senhas erradas, e sempre pelo menos um administrador ativo.
+
+## Chamados
+
+- **Automáticos (NOC-xxx):** queda acima de 1 h, gerados pelo `noc/chamados.py` do noc-senai-tcc.
+- **Abertos pelas pessoas (SG-xxx):**
+  - o cliente informa o tipo do problema, quem é afetado e a descrição;
+  - o estado da fibra e do rádio no momento da abertura é anexado sozinho;
+  - a equipe assume o atendimento, responde e resolve;
+  - se o cliente responde um chamado resolvido, ele é reaberto.
+
+Cada passo entra num histórico encadeado por SHA-256, e a tela de Chamados acusa qualquer alteração.
 
 ## No servidor do NOC (Debian 12, junto do Zabbix)
 

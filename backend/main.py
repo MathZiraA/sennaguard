@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
+import atendimento
 import auth
 import fonte
 import livro
@@ -44,6 +45,7 @@ def iniciar():
         if "senha_hash" not in [c[1] for c in con.execute("pragma table_info(usuarios)")]:
             con.execute("alter table usuarios add column senha_hash text")
         con.execute("create table if not exists sessoes (token_hash text primary key, usuario_id integer, expira integer, ip text)")
+        atendimento.criar_tabelas(con)
         if fonte.SIMULACAO and not con.execute("select 1 from usuarios").fetchone():
             agora, h = int(time.time()), auth.hash_senha(SENHA_DEMO)
             con.executemany("insert into usuarios (nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,senha_hash) values (?,?,?,?,?,?,?,?,?)", [
@@ -53,6 +55,14 @@ def iniciar():
                 ("cliente-noc", "cliente@filial.local", "Cliente", 1, 0, 1, agora - 20 * 86400, None, h),
                 ("Estagiário CTI", "estagio@noc.local", "Operador", 0, 0, 0, agora - 60 * 86400, None, h),
             ])
+        if fonte.SIMULACAO and not con.execute("select 1 from chamados_manuais").fetchone():
+            cliente = dict(con.execute("select * from usuarios where papel='Cliente' limit 1").fetchone())
+            agora = int(time.time()) - 50 * 60
+            cid = con.execute("""insert into chamados_manuais (titulo,descricao,categoria,impacto,status,contexto,aberto_por,responsavel,criado_em,atualizado_em)
+                                 values (?,?,?,?,?,?,?,?,?,?)""", (
+                "Sistema de vendas lento na Filial", "Desde as 10h o sistema de vendas demora para abrir as telas no caixa 2 e no estoque.",
+                "lentidao", "setor", "aberto", atendimento.contexto_do_enlace(fonte.visao()), cliente["id"], None, agora, agora)).lastrowid
+            atendimento.registrar(con, cid, "abertura", cliente, "Sistema de vendas lento na Filial")
     if fonte.SIMULACAO:
         livro.semear_exemplo()
 
@@ -148,8 +158,73 @@ def reconhecer(eventid: str, corpo: Reconhecer, u=auth.exigir("reconhecer")):
 
 
 @app.get("/api/chamados")
-def chamados(_=auth.exigir("chamados")):
-    return {"chamados": livro.chamados(), "integridade": livro.verificar()}
+def chamados(u=auth.exigir("chamados")):
+    with db() as con:
+        return {"chamados": livro.chamados(), "integridade": livro.verificar(),
+                "manuais": atendimento.listar(con, u), "integridade_manuais": atendimento.verificar(con)}
+
+
+class NovoChamado(BaseModel):
+    titulo: str = Field(min_length=4, max_length=120)
+    descricao: str = Field(min_length=10, max_length=4000)
+    categoria: Literal[atendimento.CATEGORIAS]
+    impacto: Literal[atendimento.IMPACTOS]
+
+
+@app.post("/api/chamados", status_code=201)
+def abrir_chamado(c: NovoChamado, u=auth.exigir("abrir_chamado")):
+    try:
+        contexto = atendimento.contexto_do_enlace(fonte.visao())
+    except Exception:  # Zabbix fora do ar não impede abrir o chamado
+        contexto = None
+    with db() as con:
+        agora = int(time.time())
+        cid = con.execute("""insert into chamados_manuais (titulo,descricao,categoria,impacto,contexto,aberto_por,criado_em,atualizado_em)
+                             values (?,?,?,?,?,?,?,?)""", (c.titulo, c.descricao, c.categoria, c.impacto, contexto, u["id"], agora, agora)).lastrowid
+        atendimento.registrar(con, cid, "abertura", u, f"{c.titulo}\n\n{c.descricao}")
+        return atendimento.detalhe(con, cid, u)
+
+
+def _chamado_ou_404(con, cid, u):
+    c = atendimento.detalhe(con, cid, u)
+    if not c:
+        raise HTTPException(404, "Chamado não encontrado.")
+    return c
+
+
+@app.get("/api/chamados/manuais/{cid}")
+def ver_chamado(cid: int, u=auth.exigir("chamados")):
+    with db() as con:
+        return _chamado_ou_404(con, cid, u)
+
+
+class Comentario(BaseModel):
+    texto: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/api/chamados/manuais/{cid}/comentario")
+def comentar(cid: int, c: Comentario, u=auth.exigir("chamados")):
+    with db() as con:
+        ch = _chamado_ou_404(con, cid, u)
+        atendimento.registrar(con, cid, "comentario", u, c.texto)
+        if ch["status"] == "resolvido" and u["papel"] == "Cliente":  # cliente respondendo reabre
+            con.execute("update chamados_manuais set status='aberto' where id=?", (cid,))
+            atendimento.registrar(con, cid, "reaberto", u)
+        return atendimento.detalhe(con, cid, u)
+
+
+class MudarStatus(BaseModel):
+    status: Literal[atendimento.STATUS]
+
+
+@app.post("/api/chamados/manuais/{cid}/status")
+def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
+    with db() as con:
+        ch = _chamado_ou_404(con, cid, u)
+        if ch["status"] != m.status:
+            con.execute("update chamados_manuais set status=?, responsavel=coalesce(responsavel, ?) where id=?", (m.status, u["id"], cid))
+            atendimento.registrar(con, cid, m.status, u)
+        return atendimento.detalhe(con, cid, u)
 
 
 @app.get("/api/equipamentos")

@@ -53,3 +53,12 @@ export function useApi<T>(url: string, intervalo = 0) {
   }, [carregar, intervalo])
   return { dados, erro, recarregar: carregar }
 }
+
+export type ContextoEnlace = { caminho: 'fibra' | 'radio'; fibra_up: boolean; radio_up: boolean; fibra_ms: string; radio_ms: string }
+export type ChamadoManual = {
+  id: number; numero: string; titulo: string; descricao: string; categoria: string; impacto: string
+  status: 'aberto' | 'em_atendimento' | 'resolvido'; contexto: ContextoEnlace | null
+  aberto_por: number; aberto_por_nome: string; responsavel_nome: string | null; criado_em: number; atualizado_em: number
+  registros?: { seq: number; acao: string; autor_nome: string; autor_papel: string; texto: string; em: number; hash: string }[]
+}
+export type ListaChamados = { chamados: Chamado[]; integridade: Integridade; manuais: ChamadoManual[]; integridade_manuais: Integridade }

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { ChevronDown, ChevronRight, Cpu, FileDown, MemoryStick, Signal, Timer } from 'lucide-react'
-import { useApi, type Alerta, type Chamado, type Ponto, type Visao as TVisao } from '../lib/api'
+import { ChevronDown, ChevronRight, Cpu, FileDown, MemoryStick, Plus, Signal, Timer } from 'lucide-react'
+import { useApi, type Alerta, type ListaChamados, type Ponto, type Visao as TVisao } from '../lib/api'
+import { StatusChamado } from '../components/Atendimento'
 import { useSessao } from '../lib/sessao'
-import { dataHora, duracao, hora, corSev } from '../lib/fmt'
+import { dataHora, desde, duracao, hora, corSev } from '../lib/fmt'
 import Trilho, { TrilhoMini } from '../components/Trilho'
 import Grafico, { faixasSemResposta } from '../components/Grafico'
 import { Botao, Card, Carregando, Led, Segmentado } from '../components/ui'
@@ -20,7 +21,7 @@ export default function Visao() {
   const { pode } = useSessao()
   const interno = pode('alertas') // equipe do NOC; o cliente vê os próprios chamados no lugar dos alertas
   const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 15000)
-  const { dados: ch } = useApi<{ chamados: Chamado[] }>(interno ? '' : '/api/chamados', 30000)
+  const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 30000)
 
   const exportar = () => {
     if (!lat) return
@@ -76,9 +77,20 @@ export default function Visao() {
         </Card>
 
         {!interno && (
-          <Card titulo="Seus chamados" acao={<Link to="/chamados" className="text-[12px] font-medium text-tinta-3 transition-colors hover:text-tinta">Ver todos</Link>}>
+          <Card titulo="Seus chamados" acao={<Link to="/chamados?sg=novo"><Botao variante="primario"><Plus />Abrir chamado</Botao></Link>}>
             <ul className="flex flex-col gap-1.5">
-              {ch?.chamados.slice(0, 5).map(c => (
+              {ch?.manuais.slice(0, 3).map(c => (
+                <li key={c.id}>
+                  <Link to={`/chamados?sg=${c.id}`} className="flex items-center gap-3 rounded-lg border border-fio px-3 py-2 transition-colors hover:bg-white/[0.03]">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium" title={c.titulo}>{c.titulo}</div>
+                      <div className="num text-[11px] text-tinta-3"><span className="font-mono text-media">{c.numero}</span> · há {desde(c.atualizado_em)}</div>
+                    </div>
+                    <StatusChamado status={c.status} />
+                  </Link>
+                </li>
+              ))}
+              {ch?.chamados.slice(0, Math.max(0, 5 - (ch?.manuais.length ?? 0))).map(c => (
                 <li key={c.numero} className="flex items-center gap-3 rounded-lg border border-fio px-3 py-2">
                   <Led cor={c.status === 'aberto' ? 'var(--color-media)' : 'var(--color-tinta-4)'} pulsa={c.status === 'aberto'} />
                   <div className="min-w-0 flex-1">
@@ -88,7 +100,7 @@ export default function Visao() {
                   <TrilhoMini nome={c.nome} />
                 </li>
               ))}
-              {ch && !ch.chamados.length && <li className="py-6 text-center text-tinta-3">Nenhum chamado. Tudo certo com a Filial.</li>}
+              {ch && !ch.chamados.length && !ch.manuais.length && <li className="py-6 text-center text-tinta-3">Nenhum chamado. Tudo certo com a Filial.</li>}
             </ul>
           </Card>
         )}

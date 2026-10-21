@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import { Activity, Bell, BookLock, ChevronsUpDown, KeyRound, LifeBuoy, LogOut, Router, Users, Waypoints } from 'lucide-react'
-import { api, useApi, type Alerta, type Visao } from '../lib/api'
+import { api, useApi, type Alerta, type ListaChamados, type Visao } from '../lib/api'
 import { useSessao } from '../lib/sessao'
 import Modal from './Modal'
 import { Botao, Led } from './ui'
@@ -10,7 +10,7 @@ import { Botao, Led } from './ui'
 const NAV = [
   { para: '/', rotulo: 'Visão do enlace', icone: Waypoints, permissao: 'visao' },
   { para: '/alertas', rotulo: 'Alertas', icone: Activity, permissao: 'alertas', contagem: true },
-  { para: '/chamados', rotulo: 'Chamados', icone: BookLock, permissao: 'chamados' },
+  { para: '/chamados', rotulo: 'Chamados', icone: BookLock, permissao: 'chamados', contagem: true },
   { para: '/equipamentos', rotulo: 'Equipamentos', icone: Router, permissao: 'equipamentos' },
   { para: '/usuarios', rotulo: 'Usuários', icone: Users, permissao: 'usuarios' },
 ]
@@ -19,6 +19,9 @@ export default function Shell() {
   const { eu, pode, sair } = useSessao()
   const [trocando, setTrocando] = useState(false)
   const { dados: alertas } = useApi<Alerta[]>(pode('alertas') ? '/api/alertas' : '', 15000)
+  // Para a equipe: chamados abertos pela Filial que ninguém assumiu ainda
+  const { dados: ch } = useApi<ListaChamados>(pode('atender_chamado') ? '/api/chamados' : '', 30000)
+  const semDono = ch?.manuais.filter(c => c.status === 'aberto').length ?? 0
   const { dados: visao } = useApi<Visao>('/api/visao', 10000)
   const ativos = alertas?.filter(a => a.ativo && !a.reconhecido).length ?? 0
   const redundante = visao ? visao.enlaces.fibra.up && visao.enlaces.radio.up : true
@@ -41,8 +44,11 @@ export default function Shell() {
               {({ isActive }) => (<>
                 <Icone className={`size-4 ${isActive ? 'text-fibra' : ''}`} strokeWidth={1.8} />
                 {rotulo}
-                {contagem && ativos > 0 && (
+                {contagem && para === '/alertas' && ativos > 0 && (
                   <span className="num ml-auto rounded-full bg-desastre/15 px-1.5 text-[11px] font-semibold text-desastre">{ativos}</span>
+                )}
+                {contagem && para === '/chamados' && semDono > 0 && (
+                  <span className="num ml-auto rounded-full bg-media/15 px-1.5 text-[11px] font-semibold text-media" title="Abertos pela Filial, sem responsável">{semDono}</span>
                 )}
               </>)}
             </NavLink>
