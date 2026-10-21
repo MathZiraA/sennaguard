@@ -59,11 +59,11 @@ EOF
     sed -i '/=$/d' "$ETC/sennaguard.env"  # tira as chaves que o noc.conf não tinha (ficam no padrão)
     chmod 640 "$ETC/sennaguard.env"; chown root:sennaguard "$ETC/sennaguard.env"
 fi
-# O serviço lê o livro de chamados do Analista IA (só leitura, pelo grupo)
-if [ -f "$LIVRO" ]; then
-    chgrp sennaguard "$LIVRO" && chmod 640 "$LIVRO"
-    chgrp sennaguard "$(dirname "$LIVRO")" && chmod g+x "$(dirname "$LIVRO")"
-fi
+# O serviço lê o livro de chamados do Analista IA (só leitura, pelo grupo). O setgid na pasta faz o
+# livro criado depois (primeiro chamado NOC-xxx) já nascer com o grupo sennaguard.
+install -d "$(dirname "$LIVRO")"
+chgrp sennaguard "$(dirname "$LIVRO")" && chmod g+rxs "$(dirname "$LIVRO")"
+[ -f "$LIVRO" ] && chgrp sennaguard "$LIVRO" && chmod 640 "$LIVRO"
 
 echo "==> 6/7 Serviço systemd e Apache"
 install -m 644 "$APP/deploy/sennaguard.service" /etc/systemd/system/sennaguard.service

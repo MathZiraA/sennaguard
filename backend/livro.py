@@ -18,9 +18,12 @@ def _hash(anterior, registro):
 
 
 def linhas():
-    if not LIVRO.exists():
+    try:
+        if not LIVRO.exists():
+            return []
+        return [json.loads(l) for l in LIVRO.read_text(encoding="utf-8").splitlines() if l.strip()]
+    except PermissionError:  # o instalador dá leitura ao grupo sennaguard; sem isso, a lista fica vazia
         return []
-    return [json.loads(l) for l in LIVRO.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def verificar():

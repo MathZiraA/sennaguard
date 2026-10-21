@@ -129,17 +129,21 @@ def visao():
         ping = next((v for k, v in itens.items() if k.startswith("icmpping[") and prefixo in k), None)
         lat = next((v for k, v in itens.items() if k.startswith("icmppingsec[") and prefixo in k), None)
         perda = next((v for k, v in itens.items() if k.startswith("icmppingloss[") and prefixo in k), None)
-        return {"up": bool(ping and ping["lastvalue"] == "1"),
-                "latencia": round(float(lat["lastvalue"]) * 1000, 2) if lat else None,
+        up = bool(ping and ping["lastvalue"] == "1")
+        return {"up": up,
+                "latencia": round(float(lat["lastvalue"]) * 1000, 2) if lat and up else None,
                 "perda": float(perda["lastvalue"]) if perda else None}
 
     fibra, radio = enlace(FIBRA_IP), enlace(RADIO_IP)
     fibra.update(porta="sfp1", custo=10, ip=FIBRA_IP)
     radio.update(porta="ether1", custo=100, ip=RADIO_IP)
-    return {"modo": "zabbix", "host": HOST, "atualizado": _agora(),
-            "caminho": "fibra" if (caminho and "FIBRA" in caminho[0]["lastvalue"].upper()) or fibra["up"] else "radio",
+    # Item calculado do noc-senai-tcc: fibra*2 + rádio -> 3/2 = FIBRA, 1 = RÁDIO, 0 = ISOLADA
+    valor = caminho[0]["lastvalue"] if caminho and caminho[0]["lastvalue"] not in ("", None) else None
+    via = ("fibra" if int(float(valor)) >= 2 else "radio") if valor is not None else ("fibra" if fibra["up"] else "radio")
+    falhou = fail and fail[0]["lastclock"] not in ("0", "", None)
+    return {"modo": "zabbix", "host": HOST, "atualizado": _agora(), "caminho": via,
             "enlaces": {"fibra": fibra, "radio": radio},
-            "ultimo_failover": {"em": int(fail[0]["lastclock"]), "segundos": float(fail[0]["lastvalue"])} if fail else None,
+            "ultimo_failover": {"em": int(fail[0]["lastclock"]), "segundos": round(float(fail[0]["lastvalue"]), 1)} if falhou else None,
             "disponibilidade_24h": None, "snmp": {"disponivel": h.get("available") == "1"}}
 
 
@@ -147,17 +151,44 @@ def serie(metrica, horas):
     if SIMULACAO:
         return _sim_serie(metrica, horas)
     h = call("host.get", {"filter": {"host": [HOST]}, "output": ["hostid"]})[0]
-    chave = "icmppingsec" if metrica == "latencia" else "net.if.in"
-    desde, pontos = _agora() - horas * 3600, {}
-    for nome, ip in (("fibra", FIBRA_IP), ("radio", RADIO_IP)):
-        it = call("item.get", {"hostids": h["hostid"], "search": {"key_": f"{chave}[{ip}"}, "output": ["itemid", "value_type"]})
+    desde = _agora() - horas * 3600
+    passo = 300 if horas <= 24 else 3600
+    baldes: dict[int, dict[str, list[float]]] = {}
+
+    def item(**filtro):
+        r = call("item.get", {"hostids": h["hostid"], "output": ["itemid", "value_type", "name"], **filtro})
+        return r[0] if r else None
+
+    if metrica == "latencia":
+        itens = {"fibra": item(search={"key_": f"icmppingsec[{FIBRA_IP},"}), "radio": item(search={"key_": f"icmppingsec[{RADIO_IP},"})}
+        escala = 1000  # segundos -> ms
+    else:  # tráfego: interfaces do template "Mikrotik by SNMP"
+        rec = call("item.get", {"hostids": h["hostid"], "output": ["itemid", "value_type", "name"], "search": {"name": "Bits received"}})
+        achar = lambda *nomes: next((i for i in rec if any(n.lower() in i["name"].lower() for n in nomes)), None)
+        itens = {"fibra": achar("sfp1", "FIBRA"), "radio": achar("ether1", "RADIO")}
+        escala = 1 / 1_000_000  # bps -> Mbps
+    for nome, it in itens.items():
         if not it:
             continue
-        for p in call("trend.get" if horas > 24 else "history.get", {"itemids": it[0]["itemid"], "history": int(it[0]["value_type"]),
-                                                                      "time_from": desde, "sortfield": "clock", "limit": 3000}):
-            t = int(p["clock"]) - int(p["clock"]) % 300
-            pontos.setdefault(t, {"t": t})[nome] = round(float(p.get("value", p.get("value_avg", 0))) * 1000, 2)
-    return [pontos[k] for k in sorted(pontos)]
+        if horas > 72:
+            dados = call("trend.get", {"itemids": [it["itemid"]], "time_from": desde, "output": ["clock", "value_avg", "value_min"]})
+        else:
+            dados = call("history.get", {"itemids": [it["itemid"]], "history": int(it["value_type"]), "time_from": desde,
+                                         "sortfield": "clock", "output": ["clock", "value"]})
+        for p in dados:
+            t = int(p["clock"]) - int(p["clock"]) % passo
+            v = float(p.get("value", p.get("value_avg", 0)))
+            # sem resposta (0 s) em qualquer medição do balde = enlace fora naquele trecho
+            if metrica == "latencia" and float(p.get("value", p.get("value_min", 1))) == 0:
+                v = float("nan")
+            baldes.setdefault(t, {}).setdefault(nome, []).append(v)
+    out = []
+    for t in sorted(baldes):
+        ponto = {"t": t}
+        for nome, vals in baldes[t].items():
+            ponto[nome] = None if any(v != v for v in vals) else round(sum(vals) / len(vals) * escala, 2)
+        out.append(ponto)
+    return out
 
 
 def alertas(horas=168):
@@ -171,14 +202,14 @@ def alertas(horas=168):
                         "analise": _SIM_ANALISE.format(ini=_hora(ini), fim=_hora(fim)) if sev >= 4 and fim else None})
         return sorted(out, key=lambda a: (not a["ativo"], -a["inicio"]))
     evs = call("event.get", {"source": 0, "object": 0, "value": 1, "time_from": _agora() - horas * 3600,
-                             "selectHosts": ["host"], "select_acknowledges": ["message", "userid", "clock", "action"],
+                             "selectHosts": ["host"], "select_acknowledges": ["message", "username", "clock", "action"],
                              "output": ["eventid", "name", "severity", "clock", "r_eventid", "acknowledged"],
                              "sortfield": ["clock"], "sortorder": "DESC"})
     rec_ids = [e["r_eventid"] for e in evs if e["r_eventid"] != "0"]
     fins = {r["eventid"]: int(r["clock"]) for r in call("event.get", {"eventids": rec_ids, "output": ["eventid", "clock"]})} if rec_ids else {}
     out = []
     for e in evs:
-        analise = next((a["message"] for a in e.get("acknowledges", []) if a.get("message", "").startswith(("**", "Linha"))), None)
+        analise = next((a["message"] for a in e.get("acknowledges", []) if a.get("username") == "noc-analista" and a.get("message")), None)
         fim = fins.get(e["r_eventid"])
         out.append({"id": e["eventid"], "severidade": SEVERIDADES[e["severity"]], "nivel": int(e["severity"]), "nome": e["name"],
                     "host": e["hosts"][0]["host"] if e.get("hosts") else HOST, "inicio": int(e["clock"]), "fim": fim,
@@ -220,5 +251,6 @@ def equipamentos():
     com_problema = {h["hostid"] for p in call("problem.get", {"output": ["eventid"], "selectHosts": ["hostid"]})
                     for h in p.get("hosts", [])}
     return [{"nome": h["host"], "tipo": _tipo(h["host"]), "ip": h["interfaces"][0]["ip"] if h.get("interfaces") else "",
-             "modelo": (h.get("inventory") or {}).get("model", ""), "local": (h.get("inventory") or {}).get("location", ""),
+             "modelo": (h.get("inventory") or {}).get("model", ""),
+             "local": (h.get("inventory") or {}).get("location") or ("Filial" if "FILIAL" in h["host"].upper() else "Matriz"),
              "up": h["status"] == "0" and h["hostid"] not in com_problema, "latencia": None} for h in hosts]
