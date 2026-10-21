@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* O mundo do NOC: rack escuro, LED de link, enlace de fibra (violeta) e de rádio (teal). */
+@theme {
+  --font-sans: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-rack: #111015;        /* fundo, mesma cor na barra lateral */
+  --color-painel: #18171e;      /* cards */
+  --color-painel-alto: #211f29; /* hover, menus, diálogos */
+  --color-fenda: #0c0b10;       /* campos: afundados no painel */
+
+  --color-tinta: #ecebf3;
+  --color-tinta-2: #b3b0c2;
+  --color-tinta-3: #7c798f;
+  --color-tinta-4: #4f4d5e;
+
+  --color-fibra: #9d8cfb;       /* enlace principal e cor da marca */
+  --color-radio: #5ccabf;       /* enlace de backup */
+  --color-led: #5bd68a;         /* link up */
+
+  --color-desastre: #f0616d;
+  --color-alta: #f28b5e;
+  --color-media: #e6b450;
+  --color-aviso: #e58fd0;
+
+  --color-fio: rgb(255 255 255 / 0.06);
+  --color-fio-forte: rgb(255 255 255 / 0.11);
+}
+
+html { color-scheme: dark; }
+body {
+  @apply bg-rack text-tinta font-sans antialiased;
+  font-size: 13px;
+}
+h1, h2, h3 { text-wrap: balance; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Pulso do tráfego andando no trilho ativo. */
+@keyframes fluxo { to { stroke-dashoffset: -24; } }
+.trilho-ativo { animation: fluxo 0.9s linear infinite; }
+@keyframes respira { 50% { opacity: .35; } }
+.respira { animation: respira 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .trilho-ativo, .respira { animation: none; }
+}
+
+:focus-visible { outline: 2px solid var(--color-fibra); outline-offset: 2px; border-radius: 6px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--color-fio-forte); border-radius: 10px; border: 3px solid var(--color-rack); }
+
+@keyframes aparece { from { opacity: 0; } }
+@keyframes gaveta { from { opacity: 0; transform: translateX(24px); } }
+@keyframes surge { from { opacity: 0; transform: translate(-50%, -48%) scale(.97); } }
+@media (prefers-reduced-motion: reduce) {
+  [data-state=open] { animation-name: aparece !important; }
+}

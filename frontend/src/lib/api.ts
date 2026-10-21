@@ -1,0 +1,55 @@
+import { useCallback, useEffect, useState } from 'react'
+
+export type Enlace = { up: boolean; latencia: number | null; perda: number | null; porta: string; custo: number; ip: string; sinal?: number | null; desde?: number }
+export type Visao = {
+  modo: string; host: string; atualizado: number; caminho: 'fibra' | 'radio'
+  enlaces: { fibra: Enlace; radio: Enlace }
+  ultimo_failover: { em: number; segundos: number; retorno_em?: number; retorno_sem_perda?: boolean } | null
+  disponibilidade_24h: { fibra: number; radio: number; filial: number } | null
+  snmp: { cpu?: number; memoria?: number; uptime?: number; routeros?: string; modelo?: string; disponivel?: boolean }
+}
+export type Ponto = { t: number; [serie: string]: number | null }
+export type Alerta = {
+  id: string; severidade: string; nivel: number; nome: string; host: string
+  inicio: number; fim: number | null; ativo: boolean; reconhecido: boolean; chamado: string | null; analise: string | null
+}
+export type Chamado = {
+  numero: string; eventid: string; host: string; nome: string; severidade: string; inicio: string
+  status: 'aberto' | 'encerrado'; fim: string; duracao: string
+  registros: { seq: number; acao: string; em: string; hash: string }[]
+}
+export type Integridade = { ok: boolean; registros: number; quebra: number | null; motivo: string }
+export type Equipamento = { nome: string; tipo: string; ip: string; modelo: string; local: string; up: boolean; latencia: number | null; sinal?: number | null }
+export type Eu = { id: number; nome: string; email: string; papel: string; permissoes: string[]; modo: string }
+export type Usuario = {
+  id: number; nome: string; email: string; papel: string; ativo: number
+  alerta_email: number; chamado_email: number; criado_em: number; ultimo_acesso: number | null
+}
+
+/** Chama a API sob o caminho da aplicação (/sennaguard/api/...). 401 avisa o app para voltar ao login. */
+export async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(import.meta.env.BASE_URL + url.replace(/^\//, ''), { headers: { 'Content-Type': 'application/json' }, ...init })
+  if (r.status === 401 && !url.startsWith('/api/login')) window.dispatchEvent(new Event('sg:sessao-expirou'))
+  if (!r.ok) {
+    const corpo = await r.json().catch(() => ({}))
+    throw new Error(typeof corpo.detail === 'string' ? corpo.detail : `Erro ${r.status}`)
+  }
+  return r.status === 204 ? (undefined as T) : r.json()
+}
+
+/** Busca e repete a cada `intervalo` ms (0 = só uma vez). */
+export function useApi<T>(url: string, intervalo = 0) {
+  const [dados, setDados] = useState<T | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const carregar = useCallback(() => {
+    if (!url) return // url vazia = o perfil não tem acesso, não busca
+    api<T>(url).then(d => { setDados(d); setErro(null) }).catch(e => setErro(e.message))
+  }, [url])
+  useEffect(() => {
+    carregar()
+    if (!intervalo) return
+    const id = setInterval(carregar, intervalo)
+    return () => clearInterval(id)
+  }, [carregar, intervalo])
+  return { dados, erro, recarregar: carregar }
+}

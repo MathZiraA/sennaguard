@@ -1,0 +1,237 @@
+"""API do SennaGuard: visão do enlace, alertas, chamados, equipamentos e usuários do NOC.
+
+Rodar:  uvicorn main:app --reload --port 8000
+Zabbix real:  defina ZABBIX_URL (…/api_jsonrpc.php) e ZABBIX_TOKEN; sem eles, roda em simulação.
+Em produção a interface já compilada (frontend/dist) é servida por esta mesma API.
+"""
+import os
+import sqlite3
+import time
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, EmailStr, Field
+
+import auth
+import fonte
+import livro
+
+BANCO = Path(os.environ.get("SENNAGUARD_BANCO", Path(__file__).parent / "dados" / "sennaguard.db"))
+DIST = Path(__file__).parent.parent / "frontend" / "dist"
+PAPEIS = ("Administrador", "Analista", "Operador", "Cliente")
+SENHA_DEMO = "senai2026"  # só no modo simulação
+
+app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
+
+
+def db():
+    BANCO.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(BANCO)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+@app.on_event("startup")
+def iniciar():
+    with db() as con:
+        con.execute("""create table if not exists usuarios (
+            id integer primary key, nome text not null, email text unique not null, papel text not null,
+            ativo integer default 1, alerta_email integer default 1, chamado_email integer default 0,
+            criado_em integer, ultimo_acesso integer, senha_hash text)""")
+        if "senha_hash" not in [c[1] for c in con.execute("pragma table_info(usuarios)")]:
+            con.execute("alter table usuarios add column senha_hash text")
+        con.execute("create table if not exists sessoes (token_hash text primary key, usuario_id integer, expira integer, ip text)")
+        if fonte.SIMULACAO and not con.execute("select 1 from usuarios").fetchone():
+            agora, h = int(time.time()), auth.hash_senha(SENHA_DEMO)
+            con.executemany("insert into usuarios (nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,senha_hash) values (?,?,?,?,?,?,?,?,?)", [
+                ("Matheus Ziravello", "matheus.ziravello@gmail.com", "Administrador", 1, 1, 1, agora - 40 * 86400, None, h),
+                ("noc-analista", "analista@noc.local", "Analista", 1, 0, 0, agora - 30 * 86400, None, h),
+                ("Plantão Matriz", "plantao@noc.local", "Operador", 1, 1, 0, agora - 12 * 86400, None, h),
+                ("cliente-noc", "cliente@filial.local", "Cliente", 1, 0, 1, agora - 20 * 86400, None, h),
+                ("Estagiário CTI", "estagio@noc.local", "Operador", 0, 0, 0, agora - 60 * 86400, None, h),
+            ])
+    if fonte.SIMULACAO:
+        livro.semear_exemplo()
+
+
+# ---------------------------------------------------------------- sessão
+class Login(BaseModel):
+    email: str
+    senha: str
+
+
+def _publico(u):
+    return {k: u[k] for k in ("id", "nome", "email", "papel")} | {"permissoes": sorted(auth.PERMISSOES[u["papel"]]), "modo": "simulação" if fonte.SIMULACAO else "zabbix"}
+
+
+@app.post("/api/login")
+def login(dados: Login, req: Request, resp: Response):
+    # O Apache acrescenta o IP real no fim do X-Forwarded-For; o começo pode ser forjado pelo cliente
+    ip = req.headers.get("x-forwarded-for", req.client.host if req.client else "").split(",")[-1].strip()
+    chave = f"{ip}|{dados.email.lower()}"
+    if auth.bloqueado(chave):
+        raise HTTPException(429, "Muitas tentativas. Aguarde 5 minutos e tente de novo.")
+    with db() as con:
+        u = con.execute("select * from usuarios where lower(email)=?", (dados.email.lower().strip(),)).fetchone()
+        if not u or not auth.confere_senha(dados.senha, u["senha_hash"]):
+            auth.falhou(chave)
+            raise HTTPException(401, "E-mail ou senha incorretos.")
+        if not u["ativo"]:
+            raise HTTPException(403, "Acesso desativado. Fale com o administrador do NOC.")
+        con.execute("update usuarios set ultimo_acesso=? where id=?", (int(time.time()), u["id"]))
+        auth.abrir_sessao(con, resp, u["id"], ip)
+        return _publico(dict(u))
+
+
+@app.post("/api/logout", status_code=204)
+def logout(req: Request, resp: Response):
+    with db() as con:
+        auth.fechar_sessao(con, req, resp)
+
+
+@app.get("/api/publico")
+def publico():
+    """Sem sessão: a tela de login usa para mostrar o aviso de demonstração."""
+    return {"simulacao": fonte.SIMULACAO, "senha_demo": SENHA_DEMO if fonte.SIMULACAO else None}
+
+
+@app.get("/api/eu")
+def eu(req: Request):
+    with db() as con:
+        u = auth.usuario_da_sessao(con, req)
+    if not u:
+        raise HTTPException(401, "Sem sessão.")
+    return _publico(u)
+
+
+class TrocaSenha(BaseModel):
+    atual: str
+    nova: str = Field(min_length=8, max_length=128)
+
+
+@app.put("/api/eu/senha", status_code=204)
+def trocar_senha(dados: TrocaSenha, u=auth.exigir("visao")):
+    if not auth.confere_senha(dados.atual, u["senha_hash"]):
+        raise HTTPException(400, "Senha atual incorreta.")
+    with db() as con:
+        con.execute("update usuarios set senha_hash=? where id=?", (auth.hash_senha(dados.nova), u["id"]))
+
+
+# ---------------------------------------------------------------- NOC
+@app.get("/api/visao")
+def visao(_=auth.exigir("visao")):
+    return fonte.visao()
+
+
+@app.get("/api/serie/{metrica}")
+def serie(metrica: Literal["latencia", "trafego", "sinal"], horas: int = 24, _=auth.exigir("visao")):
+    return fonte.serie(metrica, min(horas, 168))
+
+
+@app.get("/api/alertas")
+def alertas(horas: int = 168, _=auth.exigir("alertas")):
+    abertos = {c["eventid"]: c["numero"] for c in livro.chamados()}
+    return [dict(a, chamado=abertos.get(a["id"], a["chamado"])) for a in fonte.alertas(horas)]
+
+
+class Reconhecer(BaseModel):
+    mensagem: str = Field("", max_length=500)
+
+
+@app.post("/api/alertas/{eventid}/reconhecer")
+def reconhecer(eventid: str, corpo: Reconhecer, u=auth.exigir("reconhecer")):
+    msg = f"[{u['nome']}] {corpo.mensagem}".strip() if corpo.mensagem else ""
+    return {"ok": fonte.reconhecer(eventid, msg)}
+
+
+@app.get("/api/chamados")
+def chamados(_=auth.exigir("chamados")):
+    return {"chamados": livro.chamados(), "integridade": livro.verificar()}
+
+
+@app.get("/api/equipamentos")
+def equipamentos(_=auth.exigir("equipamentos")):
+    return fonte.equipamentos()
+
+
+# ---------------------------------------------------------------- usuários (só Administrador)
+class Usuario(BaseModel):
+    nome: str = Field(min_length=2, max_length=80)
+    email: EmailStr
+    papel: Literal[PAPEIS]
+    ativo: bool = True
+    alerta_email: bool = True
+    chamado_email: bool = False
+    senha: str | None = Field(None, min_length=8, max_length=128)  # obrigatória ao criar; ao editar, só se for trocar
+
+
+CAMPOS = "id,nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso"
+
+
+def _admins_ativos(con, exceto):
+    return con.execute("select count(*) from usuarios where papel='Administrador' and ativo=1 and id!=?", (exceto,)).fetchone()[0]
+
+
+@app.get("/api/usuarios")
+def listar_usuarios(_=auth.exigir("usuarios")):
+    with db() as con:
+        return [dict(r) for r in con.execute(f"select {CAMPOS} from usuarios order by ativo desc, nome")]
+
+
+@app.post("/api/usuarios", status_code=201)
+def criar_usuario(u: Usuario, _=auth.exigir("usuarios")):
+    if not u.senha:
+        raise HTTPException(422, "Defina uma senha inicial (mínimo 8 caracteres).")
+    try:
+        with db() as con:
+            cur = con.execute("insert into usuarios (nome,email,papel,ativo,alerta_email,chamado_email,criado_em,senha_hash) values (?,?,?,?,?,?,?,?)",
+                              (u.nome, u.email, u.papel, u.ativo, u.alerta_email, u.chamado_email, int(time.time()), auth.hash_senha(u.senha)))
+            return dict(con.execute(f"select {CAMPOS} from usuarios where id=?", (cur.lastrowid,)).fetchone())
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Já existe um usuário com esse e-mail.")
+
+
+@app.put("/api/usuarios/{uid}")
+def editar_usuario(uid: int, u: Usuario, eu=auth.exigir("usuarios")):
+    with db() as con:
+        if (u.papel != "Administrador" or not u.ativo) and not _admins_ativos(con, uid):
+            raise HTTPException(409, "O NOC precisa de pelo menos um administrador ativo.")
+        try:
+            n = con.execute("update usuarios set nome=?,email=?,papel=?,ativo=?,alerta_email=?,chamado_email=? where id=?",
+                            (u.nome, u.email, u.papel, u.ativo, u.alerta_email, u.chamado_email, uid)).rowcount
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Já existe um usuário com esse e-mail.")
+        if not n:
+            raise HTTPException(404, "Usuário não encontrado.")
+        if u.senha:
+            con.execute("update usuarios set senha_hash=? where id=?", (auth.hash_senha(u.senha), uid))
+        if u.senha or not u.ativo:  # derruba as sessões abertas dele
+            con.execute("delete from sessoes where usuario_id=? and usuario_id!=?", (uid, eu["id"]))
+        return dict(con.execute(f"select {CAMPOS} from usuarios where id=?", (uid,)).fetchone())
+
+
+@app.delete("/api/usuarios/{uid}", status_code=204)
+def remover_usuario(uid: int, eu=auth.exigir("usuarios")):
+    if uid == eu["id"]:
+        raise HTTPException(409, "Você não pode remover a si mesmo.")
+    with db() as con:
+        alvo = con.execute("select papel from usuarios where id=?", (uid,)).fetchone()
+        if alvo and alvo["papel"] == "Administrador" and not _admins_ativos(con, uid):
+            raise HTTPException(409, "O NOC precisa de pelo menos um administrador ativo.")
+        con.execute("delete from sessoes where usuario_id=?", (uid,))
+        con.execute("delete from usuarios where id=?", (uid,))
+
+
+# ---------------------------------------------------------------- interface compilada (produção)
+if DIST.exists():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+    @app.get("/{caminho:path}", include_in_schema=False)
+    def spa(caminho: str):
+        arquivo = (DIST / caminho).resolve()
+        if caminho and arquivo.is_file() and DIST.resolve() in arquivo.parents:
+            return FileResponse(arquivo)
+        return FileResponse(DIST / "index.html", headers={"Cache-Control": "no-cache"})
