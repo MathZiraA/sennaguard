@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Lightbulb } from '@phosphor-icons/react'
 import { CheckCircle2, Loader2, Send, Wrench } from 'lucide-react'
 import { Clock } from '@phosphor-icons/react'
 import { api, type ChamadoManual, type ContextoEnlace } from '../lib/api'
@@ -85,6 +86,15 @@ function Opcoes({ legenda, opcoes, valor, onChange, colunas }: { legenda: string
 export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoManual) => void; onCancelar: () => void }) {
   const [f, setF] = useState({ titulo: '', descricao: '', categoria: 'sem_acesso', impacto: 'um_pc' })
   const [erro, setErro] = useState('')
+  // Sugestões da base de conhecimento enquanto a pessoa descreve o problema (espera 500 ms de pausa na digitação)
+  const [sugestoes, setSugestoes] = useState<{ id: number; titulo: string; solucao: string }[]>([])
+  const [vendo, setVendo] = useState<number | null>(null)
+  useEffect(() => {
+    const q = `${f.titulo} ${f.descricao}`.trim()
+    if (q.length < 8) { setSugestoes([]); return }
+    const t = setTimeout(() => api<typeof sugestoes>(`/api/conhecimento/sugestoes?q=${encodeURIComponent(q)}`).then(setSugestoes).catch(() => {}), 500)
+    return () => clearTimeout(t)
+  }, [f.titulo, f.descricao])
   const [enviando, setEnviando] = useState(false)
   const enviar = async (e: FormEvent) => {
     e.preventDefault(); setErro(''); setEnviando(true)
@@ -103,6 +113,19 @@ export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoMan
         <textarea required minLength={10} maxLength={4000} rows={4} value={f.descricao} onChange={e => setF({ ...f, descricao: e.target.value })}
           placeholder="Desde quando, quais computadores, o que aparece na tela…" className={`${campo} resize-none py-2`} />
       </label>
+      {sugestoes.length > 0 && (
+        <div className="rounded-xl border border-fibra/30 bg-fibra/[0.07] px-4 py-3">
+          <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-tinta"><Lightbulb size={15} weight="fill" className="text-fibra" />Isso pode resolver antes de abrir o chamado</div>
+          <ul className="flex flex-col gap-1">
+            {sugestoes.map(s => (
+              <li key={s.id}>
+                <button type="button" onClick={() => setVendo(vendo === s.id ? null : s.id)} className="text-left text-[12.5px] font-medium text-fibra hover:underline">{s.titulo}</button>
+                {vendo === s.id && <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-tinta-2">{s.solucao}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="text-[11px] leading-snug text-tinta-3">O estado da fibra e do rádio neste momento é anexado ao chamado automaticamente.</p>
       {erro && <p className="text-[12px] text-desastre">{erro}</p>}
       <div className="flex justify-end gap-2 border-t border-fio pt-4">

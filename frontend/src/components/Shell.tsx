@@ -2,13 +2,14 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Bell, Wrench, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, List, Moon, SignOut, Siren, Sun, TelegramLogo, Ticket, UsersThree } from '@phosphor-icons/react'
+import { Bell, BookOpenText, ClockCounterClockwise, Flask, Wrench, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, List, Moon, SignOut, Siren, Sun, TelegramLogo, Ticket, UsersThree } from '@phosphor-icons/react'
 import { api, iniciarTempoReal, pararTempoReal, useApi, type Alerta, type ListaChamados } from '../lib/api'
 import { alternarTema, temaAtual } from '../lib/tema'
 import { situacao, type Manutencao } from '../pages/Manutencao'
 import { dataHora } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import Modal from './Modal'
+import Chat from './Chat'
 import { Botao } from './ui'
 
 const NAV = [
@@ -17,6 +18,9 @@ const NAV = [
   { para: '/chamados', rotulo: 'Chamados', icone: Ticket, permissao: 'chamados' },
   { para: '/equipamentos', rotulo: 'Equipamentos', icone: HardDrives, permissao: 'equipamentos' },
   { para: '/manutencao', rotulo: 'Manutenção', icone: Wrench, permissao: 'equipamentos' },
+  { para: '/testes', rotulo: 'Testes de failover', icone: Flask, permissao: 'testes' },
+  { para: '/backups', rotulo: 'Backups', icone: ClockCounterClockwise, permissao: 'backups' },
+  { para: '/conhecimento', rotulo: 'Base de conhecimento', icone: BookOpenText, permissao: 'conhecimento' },
   { para: '/usuarios', rotulo: 'Usuários', icone: UsersThree, permissao: 'usuarios' },
 ]
 
@@ -161,6 +165,7 @@ export default function Shell() {
           <Outlet />
         </main>
       </div>
+      {pode('chat') && <Chat />}
       <Modal aberto={ligandoTelegram} onClose={() => setLigandoTelegram(false)} titulo="Avisos no Telegram"
         descricao="Chamados novos, respostas e alertas chegam direto no seu Telegram.">
         <ConectarTelegram conectado={!!eu?.telegram} disponivel={!!eu?.telegram_disponivel} />

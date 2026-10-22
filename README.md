@@ -24,6 +24,24 @@ Senhas com scrypt, sessão em cookie `HttpOnly` + `SameSite=Strict` (12 h), bloq
 
 Cada passo entra num histórico encadeado por SHA-256, e a tela de Chamados acusa qualquer alteração.
 
+## Funcionalidades
+
+| Área | O que faz |
+| --- | --- |
+| Tempo real | o painel atualiza na hora (SSE em `/api/eventos`) |
+| Telegram | chamado novo, respostas, alertas (Média ou maior), manutenções, testes e relatório mensal; cada pessoa conecta a conta no menu |
+| SLA | 24x7: Filial inteira 15 min / 4 h, setor 30 min / 8 h, um PC 1 h / 24 h |
+| Incidentes | alertas do mesmo host em até 60 s agrupados; "a análise foi útil?" gera a precisão do Analista IA |
+| TV | link fixo e revogável (Usuários → Telas de TV), sem login |
+| Relatório | PDF de SLA sob demanda; todo dia 1º, o do mês anterior vai aos administradores |
+| Manutenção | janelas criadas também no Zabbix, faixa no painel, aviso 1 h antes, alertas silenciados |
+| Mapa | nós e equipamentos clicáveis, com interfaces, tráfego e recursos (SNMP); sinal do rádio em dBm |
+| Backups | `/export terse` diário dos dois roteadores, histórico, diferença e explicação pela IA |
+| Chat | "Pergunte ao NOC": IA com ferramentas só de leitura; o cliente vê apenas o que é da Filial |
+| Teste de failover | pedido → aprovação do admin → fibra desligada 60 s no R-MATRIZ → laudo em PDF |
+| Base de conhecimento | chamado resolvido vira rascunho (IA), o analista publica; sugestões ao abrir chamado |
+| Tema | escuro (padrão) ou claro, no menu do usuário; funciona no celular |
+
 ## No servidor do NOC (Debian 12, junto do Zabbix)
 
 ```bash
@@ -37,6 +55,13 @@ O instalador:
 - compila a interface;
 - cria o serviço `sennaguard` (usuário próprio, só em `127.0.0.1:8010`);
 - publica pelo Apache em **`https://<SERVIDOR_IP>/sennaguard/`**.
+
+O instalador também prepara as integrações:
+
+- **Telegram:** pergunta o token do bot (`@BotFather`).
+- **IA:** copia as chaves de `/root/.gemini_key` e `/root/.anthropic_key`.
+- **Backup:** copia a chave SSH do Analista IA (usuário `zabbix-ia`, só leitura).
+- **Teste de failover:** gera a chave do usuário `sennaguard-teste` e mostra os comandos RouterOS para criá-lo no R-MATRIZ.
 
 **Acesso pela Filial:** o PC na rede `192.168.20.0/24` abre `https://192.168.10.50/sennaguard/`. O caminho é a fibra, ou o rádio se a fibra cair. O firewall do R-MATRIZ já libera `Filial -> Matriz` e não precisa de mudança. O PC precisa confiar na CA do NOC (`http://192.168.10.50/NOC-SENAI-CA.crt`), como já é feito para o Zabbix.
 

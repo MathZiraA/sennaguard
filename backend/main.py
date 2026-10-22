@@ -17,6 +17,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 import agenda
 import atendimento
+import backup
+import chat
+import conhecimento
 import manutencao
 import relatorio
 import auth
@@ -24,6 +27,7 @@ import fonte
 import livro
 import telegram
 import tempo_real
+import teste
 import tv
 from banco import BANCO, db  # noqa: F401  (BANCO e db usados também por gerenciar.py)
 
@@ -32,7 +36,8 @@ PAPEIS = ("Administrador", "Analista", "Operador", "Cliente")
 SENHA_DEMO = "senai2026"  # só no modo simulação
 
 app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
-for r in (tempo_real.router, telegram.router, tv.router, relatorio.router, manutencao.router):
+for r in (tempo_real.router, telegram.router, tv.router, relatorio.router, manutencao.router,
+          backup.router, chat.router, conhecimento.router, teste.router):
     app.include_router(r)
 
 
@@ -50,6 +55,8 @@ def iniciar():
         telegram.criar_tabelas(con)
         tv.criar_tabelas(con)
         manutencao.criar_tabelas(con)
+        teste.criar_tabelas(con)
+        conhecimento.criar_tabelas(con, simulacao=fonte.SIMULACAO)
         con.execute("""create table if not exists avaliacoes_ia (eventid text, usuario_id integer, util integer, em integer,
                        primary key (eventid, usuario_id))""")
         if fonte.SIMULACAO and not con.execute("select 1 from usuarios").fetchone():
@@ -71,6 +78,7 @@ def iniciar():
             atendimento.registrar(con, cid, "abertura", cliente, "Sistema de vendas lento na Filial")
     if fonte.SIMULACAO:
         livro.semear_exemplo()
+        backup.semear_simulacao()
     agenda.iniciar()
 
 
@@ -292,6 +300,8 @@ def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
                      "resolvido": f"✅ <b>SG-{cid}</b> foi resolvido por {u['nome']}. Se o problema voltar, é só responder no painel.",
                      "aberto": f"↩️ <b>SG-{cid}</b> voltou para aberto."}[m.status]
             telegram.para_usuarios([ch["aberto_por"]], texto)
+            if m.status == "resolvido":
+                conhecimento.rascunhar_de_chamado(cid)  # vira rascunho na base de conhecimento
         novo = atendimento.detalhe(con, cid, u)
     tempo_real.avisar("chamados")
     return novo
