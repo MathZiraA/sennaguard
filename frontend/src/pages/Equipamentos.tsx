@@ -8,7 +8,7 @@ const icones = { roteador: Router, switch: Network, antena: Antenna, servidor: S
 
 export default function Equipamentos() {
   const { dados } = useApi<Equipamento[]>('/api/equipamentos', 15000)
-  const { dados: v } = useApi<Visao>('/api/visao', 10000)
+  const { dados: v } = useApi<Visao>('/api/visao', 10000, ['visao'])
   if (!dados) return <Carregando />
   const locais = [...new Set(dados.map(e => e.local || 'Sem local'))]
   const fora = dados.filter(e => !e.up).length
@@ -16,7 +16,7 @@ export default function Equipamentos() {
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Equipamentos</h1>
+        <h1 className="text-[22px] font-medium tracking-[-0.02em] text-titulo">Equipamentos</h1>
         <p className="mt-1 text-tinta-3">
           {dados.length} hosts monitorados · {fora ? <span className="font-medium text-desastre">{fora} sem resposta</span> : 'todos respondendo'}
         </p>

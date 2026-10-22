@@ -5,10 +5,10 @@ export function Card({ titulo, extra, acao, children, className = '' }: {
   titulo?: ReactNode; extra?: ReactNode; acao?: ReactNode; children: ReactNode; className?: string
 }) {
   return (
-    <section className={`rounded-xl border border-fio bg-painel px-5 py-5 ${className}`}>
+    <section className={`min-w-0 rounded-xl border border-fio bg-painel px-5 py-5 ${className}`}>
       {titulo && (
-        <header className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-3">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="text-[17px] font-semibold tracking-[-0.015em]">{titulo}</h2>
             {extra}
           </div>
@@ -24,15 +24,15 @@ export function Card({ titulo, extra, acao, children, className = '' }: {
 export function Chip({ ativo = false, className = '', ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { ativo?: boolean }) {
   return (
     <button {...p}
-      className={`inline-flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-[0.97] [&_svg]:size-3.5 ${ativo ? 'bg-fibra/20 text-tinta' : 'bg-painel-alto text-tinta-2 hover:bg-[#34333b] hover:text-tinta'} ${className}`} />
+      className={`inline-flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-[0.97] [&_svg]:size-3.5 ${ativo ? 'bg-fibra/20 text-tinta' : 'bg-painel-alto text-tinta-2 hover:bg-pilula-hover hover:text-tinta'} ${className}`} />
   )
 }
 
 type Variante = 'primario' | 'quieto' | 'perigo' | 'contorno'
 const variantes: Record<Variante, string> = {
-  primario: 'bg-fibra text-white hover:bg-[#9d8cf5]',
-  quieto: 'bg-[#3a3940] text-tinta hover:bg-[#45444c]',
-  contorno: 'border border-[#4a4952] text-tinta hover:bg-white/[0.04]',
+  primario: 'bg-fibra text-white hover:bg-fibra-hover',
+  quieto: 'bg-quieto text-tinta hover:bg-quieto-hover',
+  contorno: 'border border-contorno text-tinta hover:bg-white/[0.04]',
   perigo: 'bg-desastre/12 text-desastre border border-desastre/25 hover:bg-desastre/20',
 }
 

@@ -63,7 +63,7 @@ export default function Login() {
             {erro && <p role="alert" className="rounded-lg bg-desastre/10 px-3 py-2 text-[12px] text-desastre">{erro}</p>}
 
             <button disabled={enviando}
-              className="mt-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-fibra font-semibold text-rack transition-[background-color,transform] duration-150 hover:bg-[#ae9fff] active:scale-[0.97] disabled:opacity-50">
+              className="mt-1 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-fibra font-semibold text-rack transition-[background-color,transform] duration-150 hover:bg-fibra-hover active:scale-[0.97] disabled:opacity-50">
               <LogIn className="size-4" />{enviando ? 'Entrando…' : 'Entrar'}
             </button>
           </div>

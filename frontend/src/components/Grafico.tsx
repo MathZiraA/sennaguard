@@ -33,7 +33,7 @@ export default function Grafico({ dados, serie, cor, unidade, limites = [], faix
     <div className="relative">
       {ultima && (
         // Balão do incidente sobre a faixa, como o "8°C ⟷ 15°C" da referência
-        <div className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md bg-[#2c2b32] px-2.5 py-1.5 text-center shadow-lg"
+        <div className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md bg-balao px-2.5 py-1.5 text-center shadow-lg"
           style={{ left: `${Math.min(88, Math.max(12, (((ultima.ini + ultima.fim) / 2 - t0) / (t1 - t0)) * 100))}%` }}>
           <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-desastre">
             <WarningCircle size={13} weight="bold" />{ultima.rotulo}
@@ -61,20 +61,20 @@ export default function Grafico({ dados, serie, cor, unidade, limites = [], faix
             </linearGradient>
           </defs>
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={horaCurta} ticks={marcas}
-            tick={{ fill: 'var(--color-tinta-3)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#3d3c44' }} dy={6} />
+            tick={{ fill: 'var(--color-tinta-3)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--color-eixo)' }} dy={6} />
           <YAxis hide domain={[0, topo]} />
           {faixas.map(f => (
             <ReferenceArea key={f.ini} x1={f.ini} x2={f.fim} y1={0} y2={topo} fill={`url(#${id}-faixa)`} stroke="var(--color-desastre)" strokeOpacity={0.7} ifOverflow="hidden" />
           ))}
           {visiveis.map(l => (
-            <ReferenceLine key={l.rotulo} y={l.valor} stroke={l.tipo === 'critico' ? 'var(--color-limite)' : '#6b5560'}
+            <ReferenceLine key={l.rotulo} y={l.valor} stroke={l.tipo === 'critico' ? 'var(--color-limite)' : 'var(--color-normal)'}
               strokeDasharray="6 5" strokeWidth={1}
               label={{ value: `${l.rotulo} : ${fmt(l.valor)} ${unidade}`, position: 'insideTopLeft', fill: 'var(--color-tinta-2)', fontSize: 11, dy: -2 }} />
           ))}
           <Tooltip
             cursor={{ stroke: 'var(--color-fio-forte)' }}
             content={({ active, payload }) => active && payload?.length ? (
-              <div className="rounded-md bg-[#2c2b32] px-2.5 py-1.5 text-[11px] shadow-xl">
+              <div className="rounded-md bg-balao px-2.5 py-1.5 text-[11px] shadow-xl">
                 <div className="text-tinta-3">{dataHora(payload[0].payload.t)}</div>
                 <div className="num mt-0.5 font-semibold" style={{ color: cor }}>
                   {payload[0].value == null ? 'sem resposta' : `${fmt(Number(payload[0].value))} ${unidade}`}

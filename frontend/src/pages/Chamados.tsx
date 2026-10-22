@@ -5,12 +5,12 @@ import { useApi, type ChamadoManual, type ListaChamados } from '../lib/api'
 import { dataHora, desde } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import { TrilhoMini } from '../components/Trilho'
-import { CATEGORIAS, DetalheChamado, IMPACTOS, NovoChamado, StatusChamado } from '../components/Atendimento'
+import { CATEGORIAS, DetalheChamado, IMPACTOS, NovoChamado, SlaChip, StatusChamado } from '../components/Atendimento'
 import Modal from '../components/Modal'
 import { Botao, Card, Carregando, Led, Sev, Vazio } from '../components/ui'
 
 export default function Chamados() {
-  const { dados, recarregar } = useApi<ListaChamados>('/api/chamados', 30000)
+  const { dados, recarregar } = useApi<ListaChamados>('/api/chamados', 60000, ['chamados'])
   const { pode, eu } = useSessao()
   const [params, setParams] = useSearchParams()
   const [aberto, setAberto] = useState<string | null>(null)
@@ -26,7 +26,7 @@ export default function Chamados() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Chamados</h1>
+          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-titulo">Chamados</h1>
           <p className="mt-1 text-tinta-3">{cliente
             ? 'Abra um chamado quando algo não estiver funcionando na Filial e acompanhe o atendimento aqui.'
             : 'Chamados abertos pelas pessoas (SG-xxx) e os automáticos de quedas acima de 1 h (NOC-xxx).'}</p>
@@ -50,7 +50,7 @@ export default function Chamados() {
 
       <h2 className="mt-2 text-[13px] font-semibold text-tinta-2">{cliente ? 'Seus chamados' : 'Abertos pelas pessoas'}</h2>
       {manuais.length === 0 ? <Vazio>Nenhum chamado aberto até agora.</Vazio> : (
-        <Card className="!p-0">
+        <Card className="!p-0 overflow-x-auto">
           <ul>
             {manuais.map(c => <LinhaManual key={c.id} c={c} onAbrir={() => setParams({ sg: String(c.id) })} />)}
           </ul>
@@ -67,14 +67,14 @@ export default function Chamados() {
       </Modal>
 
       {chamados.length === 0 ? <Vazio>Nenhum chamado. Quedas curtas (menos de 1 h) não geram chamado.</Vazio> : (
-        <Card className="!p-0">
+        <Card className="!p-0 overflow-x-auto">
           <ul>
             {chamados.map(c => {
               const exp = aberto === c.numero
               return (
                 <li key={c.numero} className="border-b border-fio last:border-0">
                   <button onClick={() => setAberto(exp ? null : c.numero)} aria-expanded={exp}
-                    className="grid w-full grid-cols-[120px_minmax(0,1fr)_auto_150px_20px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.02]">
+                    className="grid w-full min-w-[720px] grid-cols-[120px_minmax(0,1fr)_auto_150px_20px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.02]">
                     <span className="font-mono text-[12px] font-medium text-fibra">{c.numero}</span>
                     <span className="flex min-w-0 items-center gap-3">
                       <TrilhoMini nome={c.nome} />
@@ -116,14 +116,14 @@ export default function Chamados() {
 function LinhaManual({ c, onAbrir }: { c: ChamadoManual; onAbrir: () => void }) {
   return (
     <li className="border-b border-fio last:border-0">
-      <button onClick={onAbrir} className="grid w-full grid-cols-[120px_minmax(0,1fr)_150px_150px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.02]">
+      <button onClick={onAbrir} className="grid w-full min-w-[720px] grid-cols-[100px_minmax(0,1fr)_140px_190px] items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-white/[0.02]">
         <span className="font-mono text-[12px] font-medium text-media">{c.numero}</span>
         <span className="min-w-0">
           <span className="block truncate font-medium">{c.titulo}</span>
           <span className="text-[11px] text-tinta-3">{CATEGORIAS[c.categoria]} · {IMPACTOS[c.impacto].toLowerCase()} · {c.aberto_por_nome}</span>
         </span>
         <StatusChamado status={c.status} />
-        <span className="num text-right text-[12px] text-tinta-3">atualizado há {desde(c.atualizado_em)}</span>
+        <span className="text-right"><SlaChip c={c} /></span>
       </button>
     </li>
   )

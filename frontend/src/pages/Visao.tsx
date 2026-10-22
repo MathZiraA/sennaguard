@@ -41,11 +41,11 @@ export default function Visao() {
   const [comLimites, setComLimites] = useState(true)
   const { pode } = useSessao()
   const interno = pode('alertas') // equipe do NOC; o cliente vê os próprios chamados no lugar dos alertas
-  const { dados: v } = useApi<TVisao>('/api/visao', 10000)
-  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?horas=${horas}`, 60000)
+  const { dados: v } = useApi<TVisao>('/api/visao', 10000, ['visao'])
+  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?horas=${horas}`, 60000, ['visao'])
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?horas=${horas}`, 60000)
-  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 15000)
-  const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 30000)
+  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 30000, ['alertas'])
+  const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 60000, ['chamados'])
 
   const baixar = (nome: string, linhas: string[]) => {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([linhas.join('\n')], { type: 'text/csv' })), download: nome })
@@ -64,8 +64,8 @@ export default function Visao() {
   return (
     <div className="flex flex-col gap-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="flex items-center gap-2.5 text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">
-          Enlaces<CaretRight size={18} weight="bold" className="text-[#d9d7e0]" />Matriz ⇄ Filial
+        <h1 className="flex items-center gap-2.5 text-[22px] font-medium tracking-[-0.02em] text-titulo">
+          Enlaces<CaretRight size={18} weight="bold" className="text-titulo" />Matriz ⇄ Filial
         </h1>
         <div className="flex gap-2.5">
           <Menu.Root>
@@ -88,7 +88,7 @@ export default function Visao() {
       {v ? <Contexto v={v} interno={interno} /> : <Carregando />}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <Card className="!px-9 !pt-7 !pb-5"
+        <Card className="md:!px-9 md:!pt-7 !pb-5"
           titulo={enlace === 'fibra' ? 'Latência da fibra' : 'Latência do rádio'}
           extra={<Valor valor={atual == null ? 'sem resposta' : `${atual.toLocaleString('pt-BR')} ms`} erro={atual == null} cor={cor} quando={ultimo?.t} />}
           acao={<div className="flex gap-1.5">
@@ -104,7 +104,7 @@ export default function Visao() {
 
         {interno ? <CardAlertas alertas={alertas} baixar={baixar} /> : <CardChamados ch={ch} />}
 
-        <Card className="!px-9 !pt-7 !pb-5" titulo="Tráfego na Filial"
+        <Card className="md:!px-9 md:!pt-7 !pb-5" titulo="Tráfego na Filial"
           extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} Mbps`} cor="var(--color-fibra)" quando={trf?.[trf.length - 1]?.t} />}>
           {trafego ? <Grafico dados={trafego} serie="mbps" cor="var(--color-fibra)" unidade="Mbps" altura={150}
             limites={comLimites && media ? [{ valor: Math.round(media), rotulo: 'Média', tipo: 'normal' }] : []} />
@@ -167,7 +167,7 @@ function CardAlertas({ alertas, baixar }: { alertas: Alerta[] | null; baixar: (n
           return (
             <li key={a.id}>
               <Link to={`/alertas?id=${a.id}`} title={a.nome}
-                className={`flex h-[30px] items-center gap-2.5 rounded-full px-3 text-[12px] transition-colors hover:bg-[#34333b] ${a === destaque ? 'bg-[#2a2228] ring-1 ring-inset' : 'bg-painel-alto'}`}
+                className={`flex h-[30px] items-center gap-2.5 rounded-full px-3 text-[12px] transition-colors hover:bg-pilula-hover ${a === destaque ? 'bg-destaque ring-1 ring-inset' : 'bg-painel-alto'}`}
                 style={{ '--tw-ring-color': c } as React.CSSProperties}>
                 <span className="size-1.5 shrink-0 rounded-full" style={{ background: c }} />
                 <b className="shrink-0 font-semibold text-tinta">{curto(a.nome)}</b>
@@ -195,7 +195,7 @@ function CardChamados({ ch }: { ch: ListaChamados | null }) {
         {ch?.manuais.slice(0, 5).map(c => (
           <li key={c.id}>
             <Link to={`/chamados?sg=${c.id}`} title={c.titulo}
-              className="flex h-[30px] items-center gap-2.5 rounded-full bg-painel-alto px-3 text-[12px] transition-colors hover:bg-[#34333b]">
+              className="flex h-[30px] items-center gap-2.5 rounded-full bg-painel-alto px-3 text-[12px] transition-colors hover:bg-pilula-hover">
               <b className="shrink-0 font-mono text-[11px] font-medium text-tinta-2">{c.numero}</b>
               <span className="min-w-0 flex-1 truncate text-tinta">{c.titulo}</span>
               <StatusChamado status={c.status} />
@@ -237,8 +237,8 @@ function CardCaminho({ pontos, v, alertas }: { pontos: Ponto[]; v: TVisao; alert
         <div className="pl-3">No rádio<div className="num mt-1 text-[16px] font-semibold text-tinta">{noRadio ? duracao(noRadio) : '0 min'}</div></div>
       </div>
       <div className="relative mt-5 h-[34px]" role="img" aria-label="Quedas da fibra (blocos) e alertas (riscos) no período">
-        {riscos.map(a => <span key={a.id} title={`${hora(a.inicio)} · ${a.nome}`} className="absolute inset-y-0 w-[2px] rounded-[1px] bg-[#6a5bd0]" style={{ left: x(a.inicio) }} />)}
-        {quedas.map(f => <span key={f.ini} title={`Fibra fora: ${hora(f.ini)} às ${hora(f.fim)}`} className="absolute inset-y-0 min-w-[10px] rounded-[2px] bg-[#9a3d50]" style={{ left: x(f.ini), width: `calc(${x(f.fim)} - ${x(f.ini)})` }} />)}
+        {riscos.map(a => <span key={a.id} title={`${hora(a.inicio)} · ${a.nome}`} className="absolute inset-y-0 w-[2px] rounded-[1px] bg-risco" style={{ left: x(a.inicio) }} />)}
+        {quedas.map(f => <span key={f.ini} title={`Fibra fora: ${hora(f.ini)} às ${hora(f.fim)}`} className="absolute inset-y-0 min-w-[10px] rounded-[2px] bg-queda" style={{ left: x(f.ini), width: `calc(${x(f.fim)} - ${x(f.ini)})` }} />)}
       </div>
       <div className="num mt-2 flex justify-between border-t border-fio pt-1.5 text-[10.5px] text-tinta-3">
         <span>{hora(t0)}</span><span>{hora((t0 + t1) / 2)}</span><span>{hora(t1)}</span>

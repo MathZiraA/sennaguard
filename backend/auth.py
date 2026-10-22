@@ -82,7 +82,7 @@ def usuario_da_sessao(con: sqlite3.Connection, req: Request):
 
 def exigir(permissao: str):
     """Dependência do FastAPI: 401 sem sessão, 403 se o papel não tem a permissão."""
-    from main import db  # evita import circular
+    from banco import db
 
     def checar(req: Request):
         with db() as con:

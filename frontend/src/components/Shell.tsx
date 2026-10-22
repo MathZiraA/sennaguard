@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { Bell, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, SignOut, Siren, Ticket, UsersThree } from '@phosphor-icons/react'
-import { api, useApi, type Alerta, type ListaChamados } from '../lib/api'
+import * as Dialog from '@radix-ui/react-dialog'
+import { Bell, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, List, Moon, SignOut, Siren, Sun, TelegramLogo, Ticket, UsersThree } from '@phosphor-icons/react'
+import { api, iniciarTempoReal, pararTempoReal, useApi, type Alerta, type ListaChamados } from '../lib/api'
+import { alternarTema, temaAtual } from '../lib/tema'
 import { useSessao } from '../lib/sessao'
 import Modal from './Modal'
 import { Botao } from './ui'
@@ -21,9 +23,9 @@ export default function Shell() {
   const { eu, pode, sair } = useSessao()
   const [trocando, setTrocando] = useState(false)
   const [recolhida, setRecolhida] = useState(() => { try { return localStorage.getItem('sg:lateral') === '1' } catch { return false } })
-  const { dados: alertas } = useApi<Alerta[]>(pode('alertas') ? '/api/alertas' : '', 15000)
+  const { dados: alertas } = useApi<Alerta[]>(pode('alertas') ? '/api/alertas' : '', 30000, ['alertas'])
   // Para a equipe: chamados abertos pela Filial que ninguém assumiu ainda
-  const { dados: ch } = useApi<ListaChamados>(pode('atender_chamado') ? '/api/chamados' : '', 30000)
+  const { dados: ch } = useApi<ListaChamados>(pode('atender_chamado') ? '/api/chamados' : '', 60000, ['chamados'])
   const semDono = ch?.manuais.filter(c => c.status === 'aberto').length ?? 0
   const ativos = alertas?.filter(a => a.ativo && !a.reconhecido).length ?? 0
   const ponto: Record<string, string | null> = {
@@ -31,6 +33,27 @@ export default function Shell() {
     '/chamados': semDono ? 'var(--color-media)' : null,
   }
   const alternar = () => { const r = !recolhida; setRecolhida(r); try { localStorage.setItem('sg:lateral', r ? '1' : '0') } catch { /* sem storage */ } }
+  const [menuCelular, setMenuCelular] = useState(false)
+  const [ligandoTelegram, setLigandoTelegram] = useState(false)
+  const [tema, setTema] = useState(temaAtual)
+  const local = useLocation()
+  useEffect(() => { iniciarTempoReal(); return pararTempoReal }, [])
+  useEffect(() => setMenuCelular(false), [local.pathname])
+
+  const navegacao = (compacta: boolean) => (
+    <nav className="flex flex-col gap-1">
+      {NAV.filter(n => pode(n.permissao)).map(({ para, rotulo, icone: Icone }) => (
+        <NavLink key={para} to={para} end title={compacta ? rotulo : undefined}
+          className={({ isActive }) => `flex h-10 items-center gap-3 rounded-lg text-[13.5px] transition-colors duration-150 focus-visible:outline-offset-0 ${compacta ? 'justify-center' : 'px-3.5'} ${isActive ? 'bg-ativo text-tinta' : 'text-tinta-2 hover:bg-white/[0.04] hover:text-tinta'}`}>
+          <span className="relative">
+            <Icone size={19} weight="fill" />
+            {compacta && ponto[para] && <span className="absolute -right-1 -top-0.5 size-1.5 rounded-full" style={{ background: ponto[para]! }} />}
+          </span>
+          {!compacta && <>{rotulo}{ponto[para] && <span className="size-1.5 rounded-full" style={{ background: ponto[para]! }} />}</>}
+        </NavLink>
+      ))}
+    </nav>
+  )
 
   return (
     <div className="flex min-h-screen">
@@ -43,18 +66,7 @@ export default function Shell() {
           </button>
         </div>
 
-        <nav className="flex flex-col gap-1">
-          {NAV.filter(n => pode(n.permissao)).map(({ para, rotulo, icone: Icone }) => (
-            <NavLink key={para} to={para} end title={recolhida ? rotulo : undefined}
-              className={({ isActive }) => `flex h-10 items-center gap-3 rounded-lg text-[13.5px] transition-colors duration-150 focus-visible:outline-offset-0 ${recolhida ? 'justify-center' : 'px-3.5'} ${isActive ? 'bg-[#3a3049] text-white' : 'text-tinta-2 hover:bg-white/[0.04] hover:text-tinta'}`}>
-              <span className="relative">
-                <Icone size={19} weight="fill" />
-                {recolhida && ponto[para] && <span className="absolute -right-1 -top-0.5 size-1.5 rounded-full" style={{ background: ponto[para]! }} />}
-              </span>
-              {!recolhida && <>{rotulo}{ponto[para] && <span className="size-1.5 rounded-full" style={{ background: ponto[para]! }} />}</>}
-            </NavLink>
-          ))}
-        </nav>
+        {navegacao(recolhida)}
 
         <div className="mt-auto flex flex-col gap-3">
           <a href="https://github.com/MathZiraA/noc-senai-tcc/blob/main/docs/DOCUMENTACAO.md" target="_blank" rel="noreferrer" title="Central de ajuda"
@@ -64,7 +76,7 @@ export default function Shell() {
           <div className="mx-1 h-px bg-fio-forte" />
           <Menu.Root>
             <Menu.Trigger className={`flex items-center gap-2.5 rounded-lg py-1.5 text-left transition-colors hover:bg-white/[0.03] data-[state=open]:bg-white/[0.04] ${recolhida ? 'justify-center' : 'px-2'}`}>
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-[#4a3d6b] text-[11px] font-semibold text-white">{iniciais(eu?.nome)}</div>
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-avatar text-[11px] font-semibold text-white">{iniciais(eu?.nome)}</div>
               {!recolhida && <>
                 <div className="min-w-0 flex-1 leading-tight">
                   <div className="truncate text-[12.5px] font-semibold">{eu?.nome}</div>
@@ -76,6 +88,13 @@ export default function Shell() {
             <Menu.Portal>
               <Menu.Content side="top" align="start" sideOffset={6} className="z-50 w-[208px] rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
                 <div className="truncate px-2.5 py-2 text-[11px] text-tinta-3">{eu?.email}</div>
+                <Menu.Item onSelect={() => setLigandoTelegram(true)} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">
+                  <TelegramLogo size={14} weight="fill" />{eu?.telegram ? 'Telegram conectado' : 'Conectar Telegram'}
+                  {eu?.telegram && <span className="ml-auto size-1.5 rounded-full bg-led" />}
+                </Menu.Item>
+                <Menu.Item onSelect={() => setTema(alternarTema())} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">
+                  {tema === 'claro' ? <><Moon size={14} />Tema escuro</> : <><Sun size={14} />Tema claro</>}
+                </Menu.Item>
                 <Menu.Item onSelect={() => setTrocando(true)} className="flex h-8 cursor-default items-center gap-2 rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">
                   <Key size={14} />Trocar senha
                 </Menu.Item>
@@ -89,10 +108,21 @@ export default function Shell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[76px] items-center gap-3 px-10">
+        <header className="flex h-[64px] items-center gap-3 px-4 md:h-[76px] md:px-10">
+          <Dialog.Root open={menuCelular} onOpenChange={setMenuCelular}>
+            <Dialog.Trigger className="grid size-9 place-items-center rounded-lg text-tinta md:hidden" aria-label="Abrir menu"><List size={22} /></Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-40 bg-black/55 md:hidden" />
+              <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-lateral px-3.5 pb-5 pt-6 data-[state=open]:animate-[gaveta-esq_220ms_cubic-bezier(0.23,1,0.32,1)] md:hidden">
+                <Dialog.Title className="mb-8 pl-3 text-[15px] font-medium tracking-[0.28em]">SENNA<span className="text-fibra">G</span>UARD</Dialog.Title>
+                {navegacao(false)}
+                <button onClick={sair} className="mt-auto flex h-10 items-center gap-3 rounded-lg px-3.5 text-[13.5px] text-tinta-2 hover:text-tinta"><SignOut size={19} />Sair</button>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
           {/* Bloco da organização, como o "Amazon · Administration" da referência */}
           <div className="flex items-center gap-3">
-            <div className="grid size-8 place-items-center rounded-full bg-white text-[14px] font-bold text-[#1c1b21]">S</div>
+            <div className="grid size-8 place-items-center rounded-full bg-white text-[14px] font-bold text-[#1c1b21] ring-1 ring-fio-forte">S</div>
             <div className="leading-tight">
               <div className="text-[12.5px] font-semibold text-tinta">SENAI</div>
               <div className="text-[12px] text-tinta-2">NOC Matriz · Filial</div>
@@ -108,16 +138,47 @@ export default function Shell() {
               <Ticket size={20} weight="fill" />
               {semDono > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full border-2 border-rack bg-media" />}
             </NavLink>
-            <button onClick={sair} aria-label="Sair" className="grid size-9 place-items-center rounded-lg text-tinta-2 transition-colors hover:bg-white/5 md:hidden"><SignOut size={20} /></button>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-10 pb-8 pt-2">
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-8 pt-2 md:px-10">
           <Outlet />
         </main>
       </div>
+      <Modal aberto={ligandoTelegram} onClose={() => setLigandoTelegram(false)} titulo="Avisos no Telegram"
+        descricao="Chamados novos, respostas e alertas chegam direto no seu Telegram.">
+        <ConectarTelegram conectado={!!eu?.telegram} disponivel={!!eu?.telegram_disponivel} />
+      </Modal>
       <Modal aberto={trocando} onClose={() => setTrocando(false)} titulo="Trocar senha">
         <TrocarSenha onFim={() => setTrocando(false)} />
       </Modal>
+    </div>
+  )
+}
+
+function ConectarTelegram({ conectado, disponivel }: { conectado: boolean; disponivel: boolean }) {
+  const [link, setLink] = useState('')
+  const [erro, setErro] = useState('')
+  if (!disponivel) return <p className="leading-relaxed text-tinta-2">O bot do Telegram ainda não foi configurado no servidor. Peça ao administrador para definir <code className="font-mono text-[12px]">TELEGRAM_TOKEN</code>.</p>
+  if (conectado) return (
+    <div className="flex flex-col gap-4">
+      <p className="flex items-center gap-2 text-tinta-2"><span className="size-2 rounded-full bg-led" />Seu Telegram está conectado.</p>
+      <div className="flex justify-end"><Botao variante="perigo" onClick={() => api('/api/eu/telegram', { method: 'DELETE' }).then(() => location.reload())}>Desconectar</Botao></div>
+    </div>
+  )
+  return (
+    <div className="flex flex-col gap-4">
+      <ol className="flex list-decimal flex-col gap-1.5 pl-5 leading-relaxed text-tinta-2">
+        <li>Clique em <b className="text-tinta">Abrir no Telegram</b>.</li>
+        <li>No Telegram, toque em <b className="text-tinta">Iniciar</b>.</li>
+        <li>Pronto: o bot confirma e você começa a receber os avisos.</li>
+      </ol>
+      {erro && <p className="text-[12px] text-desastre">{erro}</p>}
+      <div className="flex justify-end">
+        {link
+          ? <a href={link} target="_blank" rel="noreferrer"><Botao variante="primario"><TelegramLogo weight="fill" />Abrir no Telegram</Botao></a>
+          : <Botao variante="primario" onClick={() => api<{ link: string }>('/api/eu/telegram', { method: 'POST' }).then(r => setLink(r.link)).catch(e => setErro(e.message))}>Gerar link</Botao>}
+      </div>
+      <p className="text-[11px] text-tinta-3">O link vale por 15 minutos e só serve para a sua conta.</p>
     </div>
   )
 }

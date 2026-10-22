@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CheckCircle2, Loader2, Send, Wrench } from 'lucide-react'
+import { Clock } from '@phosphor-icons/react'
 import { api, type ChamadoManual, type ContextoEnlace } from '../lib/api'
-import { dataHora, desde } from '../lib/fmt'
+import { dataHora, desde, duracao } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import { Botao, Led } from './ui'
 
@@ -17,6 +18,45 @@ const STATUS: Record<string, { rotulo: string; cor: string }> = {
 const ACOES: Record<string, string> = {
   abertura: 'abriu o chamado', comentario: 'comentou', em_atendimento: 'assumiu o atendimento',
   resolvido: 'marcou como resolvido', aberto: 'voltou para aberto', reaberto: 'reabriu ao responder',
+}
+
+/** Situação do SLA (24x7): o prazo que está correndo agora, ou como terminou. */
+export function estadoSla(c: ChamadoManual) {
+  const agora = Date.now() / 1000
+  const { resposta, solucao } = c.sla
+  if (c.status === 'resolvido' && solucao.em)
+    return solucao.em <= solucao.prazo && (resposta.em ?? solucao.em) <= resposta.prazo
+      ? { texto: 'Resolvido no prazo', cor: 'var(--color-led)' } : { texto: 'Resolvido fora do prazo', cor: 'var(--color-desastre)' }
+  const etapa = resposta.em ? { nome: 'Resolver', ...solucao } : { nome: 'Responder', ...resposta }
+  const falta = etapa.prazo - agora
+  if (falta < 0) return { texto: `${etapa.nome === 'Responder' ? 'Resposta' : 'Solução'} atrasada ${duracao(-falta)}`, cor: 'var(--color-desastre)' }
+  const total = etapa.prazo - c.criado_em
+  return { texto: `${etapa.nome} em ${duracao(falta)}`, cor: falta < total * 0.25 ? 'var(--color-alta)' : 'var(--color-tinta-2)' }
+}
+
+export function SlaChip({ c }: { c: ChamadoManual }) {
+  const e = estadoSla(c)
+  return <span className="num inline-flex items-center gap-1.5 text-[12px] font-medium" style={{ color: e.cor }}><Clock size={13} weight="bold" />{e.texto}</span>
+}
+
+function BarraSla({ rotulo, inicio, prazo, em }: { rotulo: string; inicio: number; prazo: number; em: number | null }) {
+  const fim = em ?? Date.now() / 1000
+  const frac = Math.min(1, (fim - inicio) / (prazo - inicio))
+  const estourou = fim > prazo
+  const cor = estourou ? 'var(--color-desastre)' : em ? 'var(--color-led)' : frac > 0.75 ? 'var(--color-alta)' : 'var(--color-fibra)'
+  return (
+    <div>
+      <div className="flex justify-between text-[11px]">
+        <span className="text-tinta-3">{rotulo} · prazo {duracao(prazo - inicio)}</span>
+        <span className="num font-medium" style={{ color: cor }}>
+          {em ? `${estourou ? 'atrasou' : 'cumprido em'} ${duracao(em - inicio)}` : estourou ? `atrasado ${duracao(fim - prazo)}` : `faltam ${duracao(prazo - fim)}`}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-painel-alto">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(3, frac * 100)}%`, background: cor }} />
+      </div>
+    </div>
+  )
 }
 
 export function StatusChamado({ status }: { status: string }) {
@@ -112,6 +152,11 @@ export function DetalheChamado({ id, onMudou }: { id: number; onMudou: () => voi
         <div><dt className="text-[11px] text-tinta-3">Problema</dt><dd className="mt-1 font-medium">{CATEGORIAS[c.categoria]}</dd></div>
         <div><dt className="text-[11px] text-tinta-3">Afeta</dt><dd className="mt-1 font-medium">{IMPACTOS[c.impacto]}</dd></div>
       </dl>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-fio px-4 py-3">
+        <BarraSla rotulo="Primeira resposta" inicio={c.criado_em} prazo={c.sla.resposta.prazo} em={c.sla.resposta.em} />
+        <BarraSla rotulo="Solução" inicio={c.criado_em} prazo={c.sla.solucao.prazo} em={c.sla.solucao.em} />
+      </div>
 
       <p className="whitespace-pre-wrap leading-relaxed text-tinta-2">{c.descricao}</p>
       {c.contexto && <Foto c={c.contexto} />}

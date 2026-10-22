@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { BellRing, Mail, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BellRing, Check, Copy, Mail, Pencil, Plus, Trash2, Tv } from 'lucide-react'
+import { TelegramLogo } from '@phosphor-icons/react'
 import { api, useApi, type Usuario } from '../lib/api'
 import { desde } from '../lib/fmt'
 import Modal from '../components/Modal'
@@ -9,12 +10,12 @@ const PAPEIS: Record<string, string> = {
   Administrador: 'Configura o NOC e gerencia usuários',
   Analista: 'Investiga incidentes e comenta eventos',
   Operador: 'Acompanha o plantão e reconhece alertas',
-  Cliente: 'Recebe os chamados da Filial por e-mail',
+  Cliente: 'Abre chamados e acompanha a Filial',
 }
 const corPapel: Record<string, string> = {
   Administrador: 'var(--color-fibra)', Analista: 'var(--color-radio)', Operador: 'var(--color-tinta-2)', Cliente: 'var(--color-media)',
 }
-type Form = Omit<Usuario, 'id' | 'criado_em' | 'ultimo_acesso'> & { senha?: string }
+type Form = Omit<Usuario, 'id' | 'criado_em' | 'ultimo_acesso' | 'telegram'> & { senha?: string }
 const vazio: Form = { nome: '', email: '', papel: 'Operador', ativo: 1, alerta_email: 1, chamado_email: 0, senha: '' }
 
 export default function Usuarios() {
@@ -42,8 +43,8 @@ export default function Usuarios() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Usuários</h1>
-          <p className="mt-1 text-tinta-3">Quem acessa o NOC e quem recebe os e-mails de alerta e de chamado.</p>
+          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-titulo">Usuários</h1>
+          <p className="mt-1 text-tinta-3">Quem acessa o NOC e quem recebe os avisos de alerta e de chamado no Telegram.</p>
         </div>
         <Botao variante="primario" onClick={() => abrir()}><Plus />Novo usuário</Botao>
       </div>
@@ -60,12 +61,12 @@ export default function Usuarios() {
         ))}
       </div>
 
-      <Card className="!p-0">
-        <table className="w-full text-left">
+      <Card className="!p-0 overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left">
           <thead className="text-[11px] text-tinta-3">
             <tr className="border-b border-fio">
               <th className="py-3 pl-5 font-medium">Nome</th><th className="font-medium">Papel</th>
-              <th className="font-medium">Recebe por e-mail</th><th className="font-medium">Último acesso</th><th className="pr-5" />
+              <th className="font-medium">Avisos no Telegram</th><th className="font-medium">Último acesso</th><th className="pr-5" />
             </tr>
           </thead>
           <tbody>
@@ -83,6 +84,8 @@ export default function Usuarios() {
                 <td className="font-medium" style={{ color: corPapel[u.papel] }}>{u.papel}</td>
                 <td>
                   <div className="flex gap-1.5 text-[11px]">
+                    {!u.telegram && <span className="text-tinta-4" title="Ainda não conectou o Telegram">não conectado</span>}
+                    {!!u.telegram && <TelegramLogo size={14} weight="fill" className="text-[#2aabee]" />}
                     {u.alerta_email ? <span className="flex items-center gap-1 rounded-md bg-painel-alto px-1.5 py-0.5 text-tinta-2"><BellRing className="size-3" />Alertas</span> : null}
                     {u.chamado_email ? <span className="flex items-center gap-1 rounded-md bg-painel-alto px-1.5 py-0.5 text-tinta-2"><Mail className="size-3" />Chamados</span> : null}
                     {!u.alerta_email && !u.chamado_email && <span className="text-tinta-4">Nada</span>}
@@ -100,6 +103,8 @@ export default function Usuarios() {
           </tbody>
         </table>
       </Card>
+
+      <TelasTv />
 
       <Modal aberto={!!editando} onClose={() => setEditando(null)} titulo={editando?.id ? 'Editar usuário' : 'Novo usuário'}>
         {editando && (
@@ -122,8 +127,8 @@ export default function Usuarios() {
               </div>
             </fieldset>
             <div className="flex flex-col gap-2.5">
-              <Chave rotulo="Recebe e-mail de alerta e análise da IA" ligado={!!editando.alerta_email} onChange={v => setEditando({ ...editando, alerta_email: +v })} />
-              <Chave rotulo="Recebe e-mail de chamado (NOC-xxx)" ligado={!!editando.chamado_email} onChange={v => setEditando({ ...editando, chamado_email: +v })} />
+              <Chave rotulo="Recebe alertas no Telegram" ligado={!!editando.alerta_email} onChange={v => setEditando({ ...editando, alerta_email: +v })} />
+              <Chave rotulo="Recebe chamados novos e respostas no Telegram" ligado={!!editando.chamado_email} onChange={v => setEditando({ ...editando, chamado_email: +v })} />
               <Chave rotulo="Acesso ativo" ligado={!!editando.ativo} onChange={v => setEditando({ ...editando, ativo: +v })} />
             </div>
             {erro && <p className="text-[12px] text-desastre">{erro}</p>}
@@ -154,5 +159,44 @@ function Chave({ rotulo, ligado, onChange }: { rotulo: string; ligado: boolean; 
         <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-tinta transition-transform duration-150 peer-checked:translate-x-4" />
       </span>
     </label>
+  )
+}
+
+/** Links fixos da TV do NOC: o link aparece uma vez só, ao ser criado; revogar derruba a tela na hora. */
+function TelasTv() {
+  const { dados, recarregar } = useApi<{ id: number; nome: string; criado_em: number; criado_por: string; ultimo_uso: number | null }[]>('/api/tv-links')
+  const [nome, setNome] = useState('TV do NOC')
+  const [novo, setNovo] = useState('')
+  const [copiado, setCopiado] = useState(false)
+  const criar = async (e: FormEvent) => {
+    e.preventDefault()
+    const { chave } = await api<{ chave: string }>('/api/tv-links', { method: 'POST', body: JSON.stringify({ nome }) })
+    setNovo(`${location.origin}${import.meta.env.BASE_URL}tv?k=${chave}`); setCopiado(false); recarregar()
+  }
+  return (
+    <Card titulo="Telas de TV" extra={<span className="text-[11px] text-tinta-3">link fixo, sem login, só mostra o enlace e os alertas ativos</span>}>
+      <form onSubmit={criar} className="flex flex-wrap gap-2">
+        <input value={nome} onChange={e => setNome(e.target.value)} required minLength={2} maxLength={60} aria-label="Nome da tela" className={`${campo} max-w-[260px]`} />
+        <Botao type="submit" variante="primario"><Tv />Gerar link de TV</Botao>
+      </form>
+      {novo && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-fibra/40 bg-fibra/10 px-3 py-2.5">
+          <code className="min-w-0 flex-1 truncate font-mono text-[12px]">{novo}</code>
+          <Botao onClick={() => navigator.clipboard.writeText(novo).then(() => setCopiado(true))}>{copiado ? <Check /> : <Copy />}{copiado ? 'Copiado' : 'Copiar'}</Botao>
+          <p className="w-full text-[11px] text-tinta-3">Guarde agora: por segurança, este link não aparece de novo.</p>
+        </div>
+      )}
+      <ul className="mt-4 flex flex-col">
+        {dados?.map(t => (
+          <li key={t.id} className="flex items-center gap-3 border-t border-fio py-2.5">
+            <Tv className="size-4 text-tinta-3" />
+            <span className="font-medium">{t.nome}</span>
+            <span className="text-[11px] text-tinta-3">criado por {t.criado_por} · {t.ultimo_uso ? `visto há ${desde(t.ultimo_uso)}` : 'nunca aberto'}</span>
+            <Botao variante="perigo" className="ml-auto" onClick={() => confirm(`Revogar "${t.nome}"? A TV para de mostrar o painel na hora.`) && api(`/api/tv-links/${t.id}`, { method: 'DELETE' }).then(recarregar)}>Revogar</Botao>
+          </li>
+        ))}
+        {dados && !dados.length && <li className="border-t border-fio pt-3 text-tinta-3">Nenhuma TV conectada.</li>}
+      </ul>
+    </Card>
   )
 }

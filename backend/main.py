@@ -15,24 +15,23 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
+import agenda
 import atendimento
 import auth
 import fonte
 import livro
+import telegram
+import tempo_real
+import tv
+from banco import BANCO, db  # noqa: F401  (BANCO e db usados também por gerenciar.py)
 
-BANCO = Path(os.environ.get("SENNAGUARD_BANCO", Path(__file__).parent / "dados" / "sennaguard.db"))
 DIST = Path(__file__).parent.parent / "frontend" / "dist"
 PAPEIS = ("Administrador", "Analista", "Operador", "Cliente")
 SENHA_DEMO = "senai2026"  # só no modo simulação
 
 app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
-
-
-def db():
-    BANCO.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(BANCO)
-    con.row_factory = sqlite3.Row
-    return con
+for r in (tempo_real.router, telegram.router, tv.router):
+    app.include_router(r)
 
 
 @app.on_event("startup")
@@ -46,6 +45,10 @@ def iniciar():
             con.execute("alter table usuarios add column senha_hash text")
         con.execute("create table if not exists sessoes (token_hash text primary key, usuario_id integer, expira integer, ip text)")
         atendimento.criar_tabelas(con)
+        telegram.criar_tabelas(con)
+        tv.criar_tabelas(con)
+        con.execute("""create table if not exists avaliacoes_ia (eventid text, usuario_id integer, util integer, em integer,
+                       primary key (eventid, usuario_id))""")
         if fonte.SIMULACAO and not con.execute("select 1 from usuarios").fetchone():
             agora, h = int(time.time()), auth.hash_senha(SENHA_DEMO)
             con.executemany("insert into usuarios (nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,senha_hash) values (?,?,?,?,?,?,?,?,?)", [
@@ -65,6 +68,7 @@ def iniciar():
             atendimento.registrar(con, cid, "abertura", cliente, "Sistema de vendas lento na Filial")
     if fonte.SIMULACAO:
         livro.semear_exemplo()
+    agenda.iniciar()
 
 
 # ---------------------------------------------------------------- sessão
@@ -74,7 +78,9 @@ class Login(BaseModel):
 
 
 def _publico(u):
-    return {k: u[k] for k in ("id", "nome", "email", "papel")} | {"permissoes": sorted(auth.PERMISSOES[u["papel"]]), "modo": "simulação" if fonte.SIMULACAO else "zabbix"}
+    return {k: u[k] for k in ("id", "nome", "email", "papel")} | {
+        "permissoes": sorted(auth.PERMISSOES[u["papel"]]), "modo": "simulação" if fonte.SIMULACAO else "zabbix",
+        "telegram": bool(u.get("telegram_chat_id")), "telegram_disponivel": telegram.ativo()}
 
 
 @app.post("/api/login")
@@ -141,10 +147,51 @@ def serie(metrica: Literal["latencia", "trafego", "sinal"], horas: int = 24, _=a
     return fonte.serie(metrica, min(horas, 168))
 
 
+JANELA_INCIDENTE = 60  # mesma janela do Analista IA: eventos do mesmo host em 60 s viram um incidente
+
+
 @app.get("/api/alertas")
-def alertas(horas: int = 168, _=auth.exigir("alertas")):
+def alertas(horas: int = 168, u=auth.exigir("alertas")):
     abertos = {c["eventid"]: c["numero"] for c in livro.chamados()}
-    return [dict(a, chamado=abertos.get(a["id"], a["chamado"])) for a in fonte.alertas(horas)]
+    lista = [dict(a, chamado=abertos.get(a["id"], a["chamado"])) for a in fonte.alertas(horas)]
+    # Agrupa em incidentes: o primeiro evento de cada grupo dá o id do incidente
+    grupos: dict[str, tuple[int, str]] = {}
+    for a in sorted(lista, key=lambda a: a["inicio"]):
+        g = grupos.get(a["host"])
+        if g and a["inicio"] - g[0] <= JANELA_INCIDENTE:
+            a["incidente"] = g[1]
+        else:
+            grupos[a["host"]] = (a["inicio"], a["id"])
+            a["incidente"] = a["id"]
+    with db() as con:
+        votos = {}
+        for r in con.execute("select eventid, util, usuario_id from avaliacoes_ia"):
+            v = votos.setdefault(r["eventid"], {"uteis": 0, "inuteis": 0, "meu": None})
+            v["uteis" if r["util"] else "inuteis"] += 1
+            if r["usuario_id"] == u["id"]:
+                v["meu"] = bool(r["util"])
+    for a in lista:
+        a["avaliacao"] = votos.get(a["id"]) if a["analise"] else None
+    return lista
+
+
+class Avaliacao(BaseModel):
+    util: bool
+
+
+@app.post("/api/alertas/{eventid}/avaliacao", status_code=204)
+def avaliar_ia(eventid: str, a: Avaliacao, u=auth.exigir("reconhecer")):
+    with db() as con:
+        con.execute("insert or replace into avaliacoes_ia values (?,?,?,?)", (eventid, u["id"], int(a.util), int(time.time())))
+    tempo_real.avisar("alertas")
+
+
+@app.get("/api/ia/metricas")
+def metricas_ia(_=auth.exigir("alertas")):
+    """Precisão percebida do Analista IA, para a monografia: % das avaliações marcadas como úteis."""
+    with db() as con:
+        total, uteis = con.execute("select count(*), coalesce(sum(util), 0) from avaliacoes_ia").fetchone()
+    return {"avaliacoes": total, "uteis": uteis, "percentual": round(uteis / total * 100) if total else None}
 
 
 class Reconhecer(BaseModel):
@@ -154,7 +201,9 @@ class Reconhecer(BaseModel):
 @app.post("/api/alertas/{eventid}/reconhecer")
 def reconhecer(eventid: str, corpo: Reconhecer, u=auth.exigir("reconhecer")):
     msg = f"[{u['nome']}] {corpo.mensagem}".strip() if corpo.mensagem else ""
-    return {"ok": fonte.reconhecer(eventid, msg)}
+    ok = fonte.reconhecer(eventid, msg)
+    tempo_real.avisar("alertas")
+    return {"ok": ok}
 
 
 @app.get("/api/chamados")
@@ -182,7 +231,10 @@ def abrir_chamado(c: NovoChamado, u=auth.exigir("abrir_chamado")):
         cid = con.execute("""insert into chamados_manuais (titulo,descricao,categoria,impacto,contexto,aberto_por,criado_em,atualizado_em)
                              values (?,?,?,?,?,?,?,?)""", (c.titulo, c.descricao, c.categoria, c.impacto, contexto, u["id"], agora, agora)).lastrowid
         atendimento.registrar(con, cid, "abertura", u, f"{c.titulo}\n\n{c.descricao}")
-        return atendimento.detalhe(con, cid, u)
+        novo = atendimento.detalhe(con, cid, u)
+    tempo_real.avisar("chamados")
+    telegram.para_equipe(f"🆕 <b>Chamado SG-{cid}</b> · {atendimento.IMPACTOS_NOME[c.impacto]}\n{c.titulo}\n<i>Aberto por {u['nome']}</i>")
+    return novo
 
 
 def _chamado_ou_404(con, cid, u):
@@ -210,7 +262,16 @@ def comentar(cid: int, c: Comentario, u=auth.exigir("chamados")):
         if ch["status"] == "resolvido" and u["papel"] == "Cliente":  # cliente respondendo reabre
             con.execute("update chamados_manuais set status='aberto' where id=?", (cid,))
             atendimento.registrar(con, cid, "reaberto", u)
-        return atendimento.detalhe(con, cid, u)
+        novo = atendimento.detalhe(con, cid, u)
+    tempo_real.avisar("chamados")
+    aviso = f"💬 <b>SG-{cid}</b> · {u['nome']} respondeu\n{c.texto[:400]}"
+    if u["papel"] != "Cliente":
+        telegram.para_usuarios([ch["aberto_por"]], aviso)
+    elif ch.get("responsavel"):
+        telegram.para_usuarios([ch["responsavel"]], aviso)
+    else:
+        telegram.para_equipe(aviso)
+    return novo
 
 
 class MudarStatus(BaseModel):
@@ -224,7 +285,13 @@ def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
         if ch["status"] != m.status:
             con.execute("update chamados_manuais set status=?, responsavel=coalesce(responsavel, ?) where id=?", (m.status, u["id"], cid))
             atendimento.registrar(con, cid, m.status, u)
-        return atendimento.detalhe(con, cid, u)
+            texto = {"em_atendimento": f"🔧 <b>SG-{cid}</b> está em atendimento com {u['nome']}.",
+                     "resolvido": f"✅ <b>SG-{cid}</b> foi resolvido por {u['nome']}. Se o problema voltar, é só responder no painel.",
+                     "aberto": f"↩️ <b>SG-{cid}</b> voltou para aberto."}[m.status]
+            telegram.para_usuarios([ch["aberto_por"]], texto)
+        novo = atendimento.detalhe(con, cid, u)
+    tempo_real.avisar("chamados")
+    return novo
 
 
 @app.get("/api/equipamentos")
@@ -243,7 +310,7 @@ class Usuario(BaseModel):
     senha: str | None = Field(None, min_length=8, max_length=128)  # obrigatória ao criar; ao editar, só se for trocar
 
 
-CAMPOS = "id,nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso"
+CAMPOS = "id,nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,telegram_chat_id is not null as telegram"
 
 
 def _admins_ativos(con, exceto):

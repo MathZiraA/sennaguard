@@ -11,6 +11,9 @@ import time
 STATUS = ("aberto", "em_atendimento", "resolvido")
 CATEGORIAS = ("sem_acesso", "lentidao", "instavel", "outro")
 IMPACTOS = ("um_pc", "setor", "filial")
+IMPACTOS_NOME = {"um_pc": "um computador", "setor": "um setor", "filial": "a Filial inteira"}
+# SLA 24x7 (padrão NOC): (primeira resposta, solução) em segundos, por quem é afetado
+PRAZOS = {"filial": (15 * 60, 4 * 3600), "setor": (30 * 60, 8 * 3600), "um_pc": (3600, 24 * 3600)}
 
 
 def criar_tabelas(con: sqlite3.Connection):
@@ -69,12 +72,27 @@ def _publico(row):
     return c
 
 
+def _com_sla(con, chamados):
+    """Prazo de primeira resposta e de solução (24x7). `em` = quando foi cumprido; None = ainda correndo."""
+    marcos = {r[0]: (r[1], r[2]) for r in con.execute("""
+        select chamado_id,
+               min(case when autor_papel != 'Cliente' and acao in ('comentario', 'em_atendimento', 'resolvido') then em end),
+               max(case when acao = 'resolvido' then em end)
+        from chamado_registros group by chamado_id""")}
+    for c in chamados:
+        p1, p2 = PRAZOS[c["impacto"]]
+        resposta, resolvido = marcos.get(c["id"], (None, None))
+        c["sla"] = {"resposta": {"prazo": c["criado_em"] + p1, "em": resposta},
+                    "solucao": {"prazo": c["criado_em"] + p2, "em": resolvido if c["status"] == "resolvido" else None}}
+    return chamados
+
+
 def listar(con, usuario):
     q = """select c.*, u.nome as aberto_por_nome, r.nome as responsavel_nome from chamados_manuais c
            left join usuarios u on u.id = c.aberto_por left join usuarios r on r.id = c.responsavel"""
     if usuario["papel"] == "Cliente":  # o cliente só vê os que ele abriu
-        return [_publico(r) for r in con.execute(q + " where c.aberto_por=? order by c.atualizado_em desc", (usuario["id"],))]
-    return [_publico(r) for r in con.execute(q + " order by (c.status='resolvido'), c.atualizado_em desc")]
+        return _com_sla(con, [_publico(r) for r in con.execute(q + " where c.aberto_por=? order by c.atualizado_em desc", (usuario["id"],))])
+    return _com_sla(con, [_publico(r) for r in con.execute(q + " order by (c.status='resolvido'), c.atualizado_em desc")])
 
 
 def detalhe(con, cid, usuario):

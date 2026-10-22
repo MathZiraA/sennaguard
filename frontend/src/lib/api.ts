@@ -12,6 +12,7 @@ export type Ponto = { t: number; [serie: string]: number | null }
 export type Alerta = {
   id: string; severidade: string; nivel: number; nome: string; host: string
   inicio: number; fim: number | null; ativo: boolean; reconhecido: boolean; chamado: string | null; analise: string | null
+  incidente: string; avaliacao: { uteis: number; inuteis: number; meu: boolean | null } | null
 }
 export type Chamado = {
   numero: string; eventid: string; host: string; nome: string; severidade: string; inicio: string
@@ -20,10 +21,10 @@ export type Chamado = {
 }
 export type Integridade = { ok: boolean; registros: number; quebra: number | null; motivo: string }
 export type Equipamento = { nome: string; tipo: string; ip: string; modelo: string; local: string; up: boolean; latencia: number | null; sinal?: number | null }
-export type Eu = { id: number; nome: string; email: string; papel: string; permissoes: string[]; modo: string }
+export type Eu = { id: number; nome: string; email: string; papel: string; permissoes: string[]; modo: string; telegram: boolean; telegram_disponivel: boolean }
 export type Usuario = {
   id: number; nome: string; email: string; papel: string; ativo: number
-  alerta_email: number; chamado_email: number; criado_em: number; ultimo_acesso: number | null
+  alerta_email: number; chamado_email: number; criado_em: number; ultimo_acesso: number | null; telegram: number
 }
 
 /** Chama a API sob o caminho da aplicação (/sennaguard/api/...). 401 avisa o app para voltar ao login. */
@@ -37,8 +38,18 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return r.status === 204 ? (undefined as T) : r.json()
 }
 
-/** Busca e repete a cada `intervalo` ms (0 = só uma vez). */
-export function useApi<T>(url: string, intervalo = 0) {
+/** Tempo real: o servidor manda o nome do canal que mudou (visao, alertas, chamados…) e quem usa aquele canal recarrega. */
+let fonteEventos: EventSource | null = null
+export function iniciarTempoReal() {
+  if (fonteEventos) return
+  fonteEventos = new EventSource(import.meta.env.BASE_URL + 'api/eventos')
+  for (const canal of ['visao', 'alertas', 'chamados', 'manutencao', 'backups', 'testes', 'conhecimento'])
+    fonteEventos.addEventListener(canal, () => window.dispatchEvent(new Event(`sg:${canal}`)))
+}
+export function pararTempoReal() { fonteEventos?.close(); fonteEventos = null }
+
+/** Busca, repete a cada `intervalo` ms (0 = só uma vez) e recarrega na hora quando um dos `canais` muda. */
+export function useApi<T>(url: string, intervalo = 0, canais: string[] = []) {
   const [dados, setDados] = useState<T | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const carregar = useCallback(() => {
@@ -51,6 +62,12 @@ export function useApi<T>(url: string, intervalo = 0) {
     const id = setInterval(carregar, intervalo)
     return () => clearInterval(id)
   }, [carregar, intervalo])
+  const chaveCanais = canais.join(',')
+  useEffect(() => {
+    const lista = chaveCanais ? chaveCanais.split(',') : []
+    lista.forEach(c => window.addEventListener(`sg:${c}`, carregar))
+    return () => lista.forEach(c => window.removeEventListener(`sg:${c}`, carregar))
+  }, [carregar, chaveCanais])
   return { dados, erro, recarregar: carregar }
 }
 
@@ -59,6 +76,7 @@ export type ChamadoManual = {
   id: number; numero: string; titulo: string; descricao: string; categoria: string; impacto: string
   status: 'aberto' | 'em_atendimento' | 'resolvido'; contexto: ContextoEnlace | null
   aberto_por: number; aberto_por_nome: string; responsavel_nome: string | null; criado_em: number; atualizado_em: number
+  sla: { resposta: { prazo: number; em: number | null }; solucao: { prazo: number; em: number | null } }
   registros?: { seq: number; acao: string; autor_nome: string; autor_papel: string; texto: string; em: number; hash: string }[]
 }
 export type ListaChamados = { chamados: Chamado[]; integridade: Integridade; manuais: ChamadoManual[]; integridade_manuais: Integridade }

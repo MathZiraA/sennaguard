@@ -29,9 +29,63 @@
   --color-fio: rgb(255 255 255 / 0.07);
   --color-fio-forte: rgb(255 255 255 / 0.13);
   --color-limite: #b9566f;      /* linhas de limite tracejadas dos gráficos */
+  --color-normal: #6b5560;      /* linha de referência "Normal" */
+  --color-eixo: #3d3c44;
+
+  --color-titulo: #d9d7e0;      /* título de página em migalha */
+  --color-ativo: #3a3049;       /* item ativo da barra lateral */
+  --color-avatar: #4a3d6b;
+  --color-quieto: #3a3940;      /* botão cinza cheio */
+  --color-quieto-hover: #45444c;
+  --color-contorno: #4a4952;    /* borda do botão de contorno */
+  --color-pilula-hover: #34333b;
+  --color-destaque: #2a2228;    /* fundo da pílula do alerta mais grave */
+  --color-balao: #2c2b32;       /* tooltip e balão do incidente */
+  --color-fibra-hover: #9d8cf5;
+  --color-risco: #6a5bd0;       /* risco de alerta na régua do caminho */
+  --color-queda: #9a3d50;       /* bloco de queda na régua do caminho */
+}
+
+/* Tema claro: mesma hierarquia, valores invertidos (escolhido no menu do usuário). */
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --color-lateral: #efedf4;
+  --color-rack: #f6f5f9;
+  --color-painel: #ffffff;
+  --color-painel-alto: #eeecf3;
+  --color-fenda: #f3f2f7;
+  --color-tinta: #1b1a21;
+  --color-tinta-2: #4b4956;
+  --color-tinta-3: #75727f;
+  --color-tinta-4: #a6a3ae;
+  --color-fibra: #6f5ae0;
+  --color-radio: #23968b;
+  --color-led: #1f9d5f;
+  --color-desastre: #d9415c;
+  --color-alta: #d9606f;
+  --color-media: #b45ccf;
+  --color-aviso: #8a6fe0;
+  --color-fio: rgb(28 22 48 / 0.09);
+  --color-fio-forte: rgb(28 22 48 / 0.16);
+  --color-limite: #d9718a;
+  --color-normal: #c9b3bd;
+  --color-eixo: #d6d3de;
+  --color-titulo: #2a2833;
+  --color-ativo: #e6e0fb;
+  --color-avatar: #6f5ae0;
+  --color-quieto: #e9e7ef;
+  --color-quieto-hover: #dedbe7;
+  --color-contorno: #cfccd8;
+  --color-pilula-hover: #e4e1ec;
+  --color-destaque: #fdeef1;
+  --color-balao: #ffffff;
+  --color-fibra-hover: #5d47d4;
+  --color-risco: #8a7bea;
+  --color-queda: #e07a8f;
 }
 
 html { color-scheme: dark; }
+:root[data-tema="claro"] .sombra-clara { box-shadow: 0 1px 2px rgb(28 22 48 / .06), 0 4px 12px rgb(28 22 48 / .05); }
 body {
   @apply bg-rack text-tinta font-sans antialiased;
   font-size: 13px;
@@ -59,3 +113,4 @@ h1, h2, h3 { text-wrap: balance; }
 @media (prefers-reduced-motion: reduce) {
   [data-state=open] { animation-name: aparece !important; }
 }
+@keyframes gaveta-esq { from { opacity: 0; transform: translateX(-24px); } }
