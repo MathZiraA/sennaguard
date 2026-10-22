@@ -25,6 +25,21 @@ O SennaGuard é um painel web do NOC do TCC (repositório privado `MathZiraA/sen
 
 O código está pronto e testado em simulação: login por perfil, chamados com SLA, Telegram, relatório PDF, manutenção, backups, chat com IA, teste de failover e base de conhecimento. O instalador (`deploy/instalar.sh`) troca a simulação pelos dados reais sozinho. O que nunca rodou é o modo real contra este Zabbix e estes roteadores: é isso que você vai validar.
 
+### Se a sessão roda no notebook da Matriz (acesso remoto por SSH)
+
+Quando o Claude roda num notebook da LAN da Matriz, e não no próprio servidor, todo o roteiro vale igual, com estas adaptações:
+
+- **Todo comando deste roteiro roda no servidor**, via `ssh root@192.168.10.50`. Nada é instalado nem gravado no notebook.
+- O acesso precisa ser por **chave, sem senha** (`ssh -o BatchMode=yes root@192.168.10.50 true` tem que funcionar). Se pedir senha, pare e peça ao usuário para configurar a chave.
+- Blocos de várias linhas: mande pela entrada padrão, sem colocar o script dentro de aspas:
+  - shell: `ssh root@192.168.10.50 'bash -s' <<'EOF' … EOF`
+  - Python: `ssh root@192.168.10.50 'python3 -' <<'PY' … PY`
+  - Python com o ambiente do serviço (Etapa 5): `ssh root@192.168.10.50 "cd /opt/sennaguard/backend && runuser -u sennaguard -- env \$(grep -v '^#' /etc/sennaguard/sennaguard.env | xargs) /opt/sennaguard/.venv/bin/python -" <<'PY' … PY`
+- Para gravar um script no servidor (ex.: `/root/sennaguard_antenas.py`): `ssh root@192.168.10.50 'cat > /root/sennaguard_antenas.py' <<'PY' … PY`.
+- **Nenhum segredo vem para o notebook:** não copie tokens, chaves nem o `.env` para a máquina local, nem por `scp`.
+- Leia este roteiro no servidor: `ssh root@192.168.10.50 cat /opt/sennaguard/docs/IMPLANTACAO-SERVIDOR.md`.
+- Os passos interativos (`git clone`, `instalar.sh`) o usuário faz numa janela SSH separada. O WinBox e o navegador do painel ficam no próprio notebook.
+
 ## Regras de segurança
 
 Este servidor monitora uma rede em produção. Na dúvida, pare e pergunte ao usuário.
