@@ -88,3 +88,5 @@ Sem `ZABBIX_URL`/`ZABBIX_TOKEN` a API roda em **simulação**: valores da bancad
 - `backend/livro.py`: livro de chamados (mesmo formato de `noc/chamados.py`)
 - `frontend/src/components/Trilho.tsx`: o trilho do caminho ativo (Matriz ⇄ Filial)
 - `deploy/`: instalador, serviço systemd e configuração do Apache
+
+Roteiro de implantação para uma sessão do Claude no servidor: [`docs/IMPLANTACAO-SERVIDOR.md`](docs/IMPLANTACAO-SERVIDOR.md).
