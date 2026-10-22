@@ -5,11 +5,11 @@ export function Card({ titulo, extra, acao, children, className = '' }: {
   titulo?: ReactNode; extra?: ReactNode; acao?: ReactNode; children: ReactNode; className?: string
 }) {
   return (
-    <section className={`rounded-2xl border border-fio bg-painel p-5 ${className}`}>
+    <section className={`rounded-xl border border-fio bg-painel px-5 py-5 ${className}`}>
       {titulo && (
         <header className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-2.5">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{titulo}</h2>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-[17px] font-semibold tracking-[-0.015em]">{titulo}</h2>
             {extra}
           </div>
           {acao}
@@ -20,10 +20,19 @@ export function Card({ titulo, extra, acao, children, className = '' }: {
   )
 }
 
-type Variante = 'primario' | 'quieto' | 'perigo'
+/** Botãozinho de cabeçalho de card ("Thresholds", "Download", "Details" na referência). */
+export function Chip({ ativo = false, className = '', ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { ativo?: boolean }) {
+  return (
+    <button {...p}
+      className={`inline-flex h-[26px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition-[background-color,color,transform] duration-150 active:scale-[0.97] [&_svg]:size-3.5 ${ativo ? 'bg-fibra/20 text-tinta' : 'bg-painel-alto text-tinta-2 hover:bg-[#34333b] hover:text-tinta'} ${className}`} />
+  )
+}
+
+type Variante = 'primario' | 'quieto' | 'perigo' | 'contorno'
 const variantes: Record<Variante, string> = {
-  primario: 'bg-fibra text-rack hover:bg-[#ae9fff]',
-  quieto: 'bg-painel-alto text-tinta-2 border border-fio hover:text-tinta hover:border-fio-forte',
+  primario: 'bg-fibra text-white hover:bg-[#9d8cf5]',
+  quieto: 'bg-[#3a3940] text-tinta hover:bg-[#45444c]',
+  contorno: 'border border-[#4a4952] text-tinta hover:bg-white/[0.04]',
   perigo: 'bg-desastre/12 text-desastre border border-desastre/25 hover:bg-desastre/20',
 }
 
@@ -31,7 +40,7 @@ export function Botao({ variante = 'quieto', className = '', ...p }: ButtonHTMLA
   return (
     <button
       {...p}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[background-color,color,border-color,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5 ${variantes[variante]} ${className}`}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-[7px] px-3.5 text-[12.5px] font-medium transition-[background-color,color,border-color,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5 ${variantes[variante]} ${className}`}
     />
   )
 }

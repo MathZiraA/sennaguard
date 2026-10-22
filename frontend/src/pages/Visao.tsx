@@ -1,198 +1,249 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { ChevronDown, ChevronRight, Cpu, FileDown, MemoryStick, Plus, Signal, Timer } from 'lucide-react'
+import { ArrowsOut, CaretDown, CaretRight, CellSignalFull, CellSignalX, Cpu, DownloadSimple, FileText, LinkBreak, LinkSimple, Plus, SlidersHorizontal } from '@phosphor-icons/react'
 import { useApi, type Alerta, type ListaChamados, type Ponto, type Visao as TVisao } from '../lib/api'
-import { StatusChamado } from '../components/Atendimento'
+import { dataHora, desde, duracao, hora } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
-import { dataHora, desde, duracao, hora, corSev } from '../lib/fmt'
-import Trilho, { TrilhoMini } from '../components/Trilho'
-import Grafico, { faixasSemResposta } from '../components/Grafico'
-import { Botao, Card, Carregando, Led, Segmentado } from '../components/ui'
+import Grafico, { faixasSemResposta, type Limite } from '../components/Grafico'
+import { StatusChamado } from '../components/Atendimento'
+import { Botao, Card, Carregando, Chip } from '../components/ui'
 
-const periodos = [{ h: 6, r: 'Últimas 6 h' }, { h: 24, r: 'Últimas 24 h' }, { h: 72, r: 'Últimos 3 dias' }, { h: 168, r: 'Últimos 7 dias' }]
+const periodos = [{ h: 6, r: 'Últimas 6 horas' }, { h: 24, r: 'Últimas 24 horas' }, { h: 72, r: 'Últimos 3 dias' }, { h: 168, r: 'Últimos 7 dias' }]
+
+// Limites reais do projeto: troca automática da fibra em 30 ms (netwatch) e trigger do rádio em 50 ms;
+// "Normal" = o que a bancada mediu em 16/10/2026.
+const LIMITES: Record<'fibra' | 'radio', Limite[]> = {
+  fibra: [{ valor: 30, rotulo: 'Crítico', tipo: 'critico' }, { valor: 0.6, rotulo: 'Normal', tipo: 'normal' }],
+  radio: [{ valor: 50, rotulo: 'Crítico', tipo: 'critico' }, { valor: 6.4, rotulo: 'Normal', tipo: 'normal' }],
+}
+
+const CRITICO = ['Desastre', 'Alta']
+
+/** Nome curto do trigger, para a pílula do alerta (o equivalente ao "12°C" da referência). */
+export function curto(nome: string) {
+  const n = nome.toUpperCase()
+  if (n.startsWith('FILIAL ISOLADA')) return 'Filial isolada'
+  if (n.startsWith('PREVISÃO')) return 'Previsão rádio'
+  if (n.includes('FIBRA') && n.includes('INSTÁVEL')) return 'Fibra instável'
+  if (n.startsWith('LINK FIBRA')) return 'Fibra caiu'
+  if (n.startsWith('LINK RÁDIO')) return 'Rádio caiu'
+  if (n.includes('PERDA')) return 'Perda no rádio'
+  if (n.includes('ACIMA DO NORMAL')) return 'Rádio lento'
+  if (n.includes('LATÊNCIA ALTA')) return 'Latência alta'
+  if (n.includes('SEM COMUNICAÇÃO')) return 'Failover lento'
+  return nome.split(':')[0]
+}
 
 export default function Visao() {
   const [horas, setHoras] = useState(24)
   const [enlace, setEnlace] = useState<'fibra' | 'radio'>('fibra')
+  const [comLimites, setComLimites] = useState(true)
+  const { pode } = useSessao()
+  const interno = pode('alertas') // equipe do NOC; o cliente vê os próprios chamados no lugar dos alertas
   const { dados: v } = useApi<TVisao>('/api/visao', 10000)
   const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?horas=${horas}`, 60000)
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?horas=${horas}`, 60000)
-  const { pode } = useSessao()
-  const interno = pode('alertas') // equipe do NOC; o cliente vê os próprios chamados no lugar dos alertas
   const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 15000)
   const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 30000)
 
-  const exportar = () => {
-    if (!lat) return
-    const csv = ['horario;latencia_fibra_ms;latencia_radio_ms', ...lat.map(p => `${new Date(p.t * 1000).toISOString()};${p.fibra ?? ''};${p.radio ?? ''}`)].join('\n')
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `sennaguard-latencia-${horas}h.csv` })
+  const baixar = (nome: string, linhas: string[]) => {
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([linhas.join('\n')], { type: 'text/csv' })), download: nome })
     a.click()
   }
+  const exportar = () => lat && baixar(`sennaguard-latencia-${horas}h.csv`,
+    ['horario;latencia_fibra_ms;latencia_radio_ms', ...lat.map(p => `${new Date(p.t * 1000).toISOString()};${p.fibra ?? ''};${p.radio ?? ''}`)])
 
   const ultimo = lat?.length ? lat[lat.length - 1] : null
   const atual = ultimo?.[enlace] ?? null
   const cor = enlace === 'fibra' ? 'var(--color-fibra)' : 'var(--color-radio)'
+  const trafego = trf?.map(p => ({ t: p.t, mbps: p.fibra ?? p.radio }))
+  const mbps = trafego?.length ? trafego[trafego.length - 1].mbps : null
+  const media = trafego?.length ? trafego.reduce((s, p) => s + (p.mbps ?? 0), 0) / trafego.length : 0
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em]">
-          <span className="text-tinta-3">Enlaces</span><ChevronRight className="size-4 text-tinta-4" />Matriz ⇄ Filial
-        </div>
-        <div className="flex gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="flex items-center gap-2.5 text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">
+          Enlaces<CaretRight size={18} weight="bold" className="text-[#d9d7e0]" />Matriz ⇄ Filial
+        </h1>
+        <div className="flex gap-2.5">
           <Menu.Root>
-            <Menu.Trigger asChild><Botao>{periodos.find(p => p.h === horas)?.r}<ChevronDown /></Botao></Menu.Trigger>
+            <Menu.Trigger asChild><Botao variante="contorno">{periodos.find(p => p.h === horas)?.r}<CaretDown weight="fill" /></Botao></Menu.Trigger>
             <Menu.Portal>
-              <Menu.Content align="end" sideOffset={6} className="z-50 min-w-40 origin-[var(--radix-dropdown-menu-content-transform-origin)] rounded-xl border border-fio-forte bg-painel-alto p-1 text-[12px] shadow-2xl">
+              <Menu.Content align="end" sideOffset={6} className="z-50 min-w-44 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
                 {periodos.map(p => (
                   <Menu.Item key={p.h} onSelect={() => setHoras(p.h)}
-                    className={`flex h-8 cursor-default items-center rounded-lg px-2.5 outline-none data-[highlighted]:bg-white/5 ${p.h === horas ? 'text-fibra' : 'text-tinta-2'}`}>
+                    className={`flex h-8 cursor-default items-center rounded-md px-2.5 outline-none data-[highlighted]:bg-white/5 ${p.h === horas ? 'text-fibra' : 'text-tinta-2'}`}>
                     {p.r}
                   </Menu.Item>
                 ))}
               </Menu.Content>
             </Menu.Portal>
           </Menu.Root>
-          <Botao onClick={exportar}><FileDown />Exportar CSV</Botao>
+          <Botao onClick={exportar}><FileText />Exportar relatório</Botao>
         </div>
       </div>
 
-      {v && interno && <Contexto v={v} />}
-      {v ? <Trilho v={v} /> : <Carregando />}
+      {v ? <Contexto v={v} interno={interno} /> : <Carregando />}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <Card
-          titulo="Latência do enlace"
-          extra={<span className="num text-[15px] font-semibold" style={{ color: atual == null ? 'var(--color-desastre)' : cor }}>
-            {atual == null ? 'sem resposta' : `${atual.toLocaleString('pt-BR')} ms`}</span>}
-          acao={<Segmentado valor={enlace} onChange={setEnlace} opcoes={[{ v: 'fibra', rotulo: 'Fibra' }, { v: 'radio', rotulo: 'Rádio' }]} />}>
-          {lat ? (
-            <Grafico dados={lat} serie={enlace} cor={cor} unidade="ms"
-              faixas={faixasSemResposta(lat, enlace, enlace === 'fibra' ? 'fibra fora' : 'rádio fora')}
-              limites={enlace === 'fibra'
-                ? [{ valor: 30, rotulo: 'Degradada (troca p/ rádio)', cor: 'var(--color-alta)' }]
-                : [{ valor: 50, rotulo: 'Latência alta', cor: 'var(--color-media)' }]} altura={330} />
-          ) : <div className="h-[330px]" />}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <Card className="!px-9 !pt-7 !pb-5"
+          titulo={enlace === 'fibra' ? 'Latência da fibra' : 'Latência do rádio'}
+          extra={<Valor valor={atual == null ? 'sem resposta' : `${atual.toLocaleString('pt-BR')} ms`} erro={atual == null} cor={cor} quando={ultimo?.t} />}
+          acao={<div className="flex gap-1.5">
+            <Chip ativo={enlace === 'fibra'} onClick={() => setEnlace('fibra')}>Fibra</Chip>
+            <Chip ativo={enlace === 'radio'} onClick={() => setEnlace('radio')}>Rádio</Chip>
+            <Chip ativo={comLimites} onClick={() => setComLimites(!comLimites)}><SlidersHorizontal />Limites</Chip>
+          </div>}>
+          {lat ? <Grafico dados={lat} serie={enlace} cor={cor} unidade="ms" altura={250}
+            limites={comLimites ? LIMITES[enlace] : []}
+            faixas={faixasSemResposta(lat, enlace, enlace === 'fibra' ? 'Fibra fora' : 'Rádio fora')} />
+            : <div className="h-[250px]" />}
         </Card>
 
-        {!interno && (
-          <Card titulo="Seus chamados" acao={<Link to="/chamados?sg=novo"><Botao variante="primario"><Plus />Abrir chamado</Botao></Link>}>
-            <ul className="flex flex-col gap-1.5">
-              {ch?.manuais.slice(0, 3).map(c => (
-                <li key={c.id}>
-                  <Link to={`/chamados?sg=${c.id}`} className="flex items-center gap-3 rounded-lg border border-fio px-3 py-2 transition-colors hover:bg-white/[0.03]">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium" title={c.titulo}>{c.titulo}</div>
-                      <div className="num text-[11px] text-tinta-3"><span className="font-mono text-media">{c.numero}</span> · há {desde(c.atualizado_em)}</div>
-                    </div>
-                    <StatusChamado status={c.status} />
-                  </Link>
-                </li>
-              ))}
-              {ch?.chamados.slice(0, Math.max(0, 5 - (ch?.manuais.length ?? 0))).map(c => (
-                <li key={c.numero} className="flex items-center gap-3 rounded-lg border border-fio px-3 py-2">
-                  <Led cor={c.status === 'aberto' ? 'var(--color-media)' : 'var(--color-tinta-4)'} pulsa={c.status === 'aberto'} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium" title={c.nome}>{c.nome}</div>
-                    <div className="num text-[11px] text-tinta-3"><span className="font-mono text-fibra">{c.numero}</span> · {c.status === 'aberto' ? 'em atendimento' : `resolvido em ${c.duracao}`}</div>
-                  </div>
-                  <TrilhoMini nome={c.nome} />
-                </li>
-              ))}
-              {ch && !ch.chamados.length && !ch.manuais.length && <li className="py-6 text-center text-tinta-3">Nenhum chamado. Tudo certo com a Filial.</li>}
-            </ul>
-          </Card>
-        )}
+        {interno ? <CardAlertas alertas={alertas} baixar={baixar} /> : <CardChamados ch={ch} />}
 
-        {interno && <Card titulo="Alertas" acao={<Link to="/alertas" className="text-[12px] font-medium text-tinta-3 transition-colors hover:text-tinta">Ver todos</Link>}>
-          <ul className="flex flex-col gap-1.5">
-            {alertas?.slice(0, 5).map(a => (
-              <li key={a.id}>
-                <Link to={`/alertas?id=${a.id}`}
-                  className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-white/[0.03] ${a.ativo ? 'border-[color-mix(in_srgb,var(--sev)_45%,transparent)] bg-[color-mix(in_srgb,var(--sev)_7%,transparent)]' : 'border-fio'}`}
-                  style={{ '--sev': corSev[a.severidade] } as React.CSSProperties}>
-                  <Led cor={corSev[a.severidade]} pulsa={a.ativo} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium" title={a.nome}>{a.nome}</div>
-                    <div className="num text-[11px] text-tinta-3">{dataHora(a.inicio)} · {a.ativo ? `há ${duracao(Date.now() / 1000 - a.inicio)}` : duracao((a.fim ?? 0) - a.inicio)}</div>
-                  </div>
-                  <TrilhoMini nome={a.nome} />
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {alertas && (
-            <div className="num mt-4 flex gap-4 border-t border-fio pt-3 text-[11px] text-tinta-3">
-              <span><b className="font-semibold text-tinta">{alertas.filter(a => a.ativo).length}</b> ativos</span>
-              <span><b className="font-semibold text-tinta">{alertas.filter(a => a.nivel >= 4).length}</b> alta ou desastre</span>
-              <span className="ml-auto">{alertas.length} em 7 dias</span>
-            </div>
-          )}
-        </Card>}
-
-        <Card titulo="Tráfego na Filial" extra={<span className="text-[11px] text-tinta-3">Mbps · caminho ativo</span>}>
-          {trf ? <Grafico dados={trf.map(p => ({ t: p.t, mbps: p.fibra ?? p.radio }))} serie="mbps" cor="var(--color-tinta-2)" unidade="Mbps" altura={170} /> : <div className="h-[170px]" />}
+        <Card className="!px-9 !pt-7 !pb-5" titulo="Tráfego na Filial"
+          extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} Mbps`} cor="var(--color-fibra)" quando={trf?.[trf.length - 1]?.t} />}>
+          {trafego ? <Grafico dados={trafego} serie="mbps" cor="var(--color-fibra)" unidade="Mbps" altura={150}
+            limites={comLimites && media ? [{ valor: Math.round(media), rotulo: 'Média', tipo: 'normal' }] : []} />
+            : <div className="h-[150px]" />}
         </Card>
 
-        <Card titulo="Trocas de caminho" extra={<span className="text-[11px] text-tinta-3">{periodos.find(p => p.h === horas)?.r.toLowerCase()}</span>}>
-          {lat && v && <Trocas pontos={lat} v={v} />}
-        </Card>
+        {lat && v ? <CardCaminho pontos={lat} v={v} alertas={alertas ?? []} /> : <Card><div className="h-[150px]" /></Card>}
       </div>
     </div>
   )
 }
 
-/** Barra de contexto do host monitorado, como a ficha do sensor na referência. */
-function Contexto({ v }: { v: TVisao }) {
-  const s = v.snmp
-  const itens = [
-    { icone: Signal, texto: v.enlaces.radio.up ? `Sinal ${v.enlaces.radio.sinal ?? '—'} dBm` : 'Sinal do rádio: sem leitura', alerta: !v.enlaces.radio.up },
-    s.cpu != null && { icone: Cpu, texto: `CPU ${s.cpu}%` },
-    s.memoria != null && { icone: MemoryStick, texto: `Memória ${s.memoria}%` },
-    s.uptime != null && { icone: Timer, texto: `No ar há ${duracao(s.uptime)}` },
-  ].filter(Boolean) as { icone: typeof Cpu; texto: string; alerta?: boolean }[]
+function Valor({ valor, cor, quando, erro = false }: { valor: string; cor: string; quando?: number; erro?: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-fio bg-painel px-5 py-3 text-tinta-2">
-      <span className="font-mono text-[12px]"><span className="text-tinta-3">host</span> {v.host}</span>
-      {s.modelo && <span className="text-tinta-3">{s.modelo} · RouterOS {s.routeros}</span>}
-      {itens.map(i => (
-        <span key={i.texto} className={`flex items-center gap-1.5 ${i.alerta ? 'text-media' : ''}`}><i.icone className="size-3.5" strokeWidth={1.8} />{i.texto}</span>
-      ))}
-      <span className="num ml-auto text-[11px] text-tinta-4">atualizado {hora(v.atualizado)}</span>
+    <span className="flex items-baseline gap-2">
+      <span className="num text-[17px] font-semibold" style={{ color: erro ? 'var(--color-desastre)' : cor }}>{valor}</span>
+      {quando && <span className="text-[10.5px] text-tinta-3">há {desde(quando)}</span>}
+    </span>
+  )
+}
+
+/** Faixa do host monitorado, com divisores, como a do sensor na referência. */
+function Contexto({ v, interno }: { v: TVisao; interno: boolean }) {
+  const s = v.snmp
+  const radio = v.enlaces.radio
+  const redundante = v.enlaces.fibra.up && radio.up
+  const div = <span className="h-5 w-px shrink-0 bg-fio-forte" />
+  return (
+    <div className="flex min-h-[52px] flex-wrap items-center gap-x-6 gap-y-2 rounded-[10px] border border-fio bg-painel px-7 py-2.5 text-[13px] text-tinta">
+      <span>Host: {v.host}</span>
+      {div}
+      <span className="flex items-center gap-2">
+        {radio.up
+          ? <><CellSignalFull size={15} weight="fill" className="text-led" />Rádio {radio.sinal ?? '—'} dBm</>
+          : <><CellSignalX size={15} weight="fill" className="text-desastre" />Rádio sem sinal</>}
+      </span>
+      {interno && s.cpu != null && <>{div}<span className="flex items-center gap-2"><Cpu size={15} weight="fill" className="text-led" />CPU {s.cpu}%</span></>}
+      {interno && s.uptime != null && <>{div}<span>No ar há {duracao(s.uptime)}</span></>}
+      {interno && s.routeros && <>{div}<span className="text-tinta-2">{s.modelo} · RouterOS {s.routeros}</span></>}
+      <span className="ml-auto" title={redundante ? 'Com redundância: fibra e rádio no ar' : 'Sem redundância'}>
+        {redundante ? <LinkSimple size={18} className="text-tinta-3" /> : <LinkBreak size={18} className="text-desastre" />}
+      </span>
     </div>
   )
 }
 
-/** Código de barras do período: cada risco é um trecho, colorido pelo enlace que carregou o tráfego. */
-function Trocas({ pontos, v }: { pontos: Ponto[]; v: TVisao }) {
-  const passo = Math.max(1, Math.floor(pontos.length / 72))
-  const amostra = pontos.filter((_, i) => i % passo === 0)
-  const trocas = amostra.filter((p, i) => i > 0 && (p.fibra == null) !== (amostra[i - 1].fibra == null)).length
+function CardAlertas({ alertas, baixar }: { alertas: Alerta[] | null; baixar: (nome: string, linhas: string[]) => void }) {
+  const lista = alertas?.slice(0, 5) ?? []
+  const destaque = lista.find(a => a.ativo && CRITICO.includes(a.severidade)) ?? lista.find(a => a.ativo)
+  const criticos = alertas?.filter(a => CRITICO.includes(a.severidade)).length ?? 0
   return (
-    <div>
-      <div className="flex gap-6">
-        <div>
-          <div className="text-[11px] text-tinta-3">Estado</div>
-          <div className="mt-1 flex items-center gap-1.5 font-semibold" style={{ color: v.caminho === 'fibra' ? 'var(--color-fibra)' : 'var(--color-radio)' }}>
-            <Led cor="currentColor" />{v.caminho === 'fibra' ? 'Na fibra' : 'No rádio'}
+    <Card titulo="Alertas" acao={
+      <Chip onClick={() => alertas && baixar('sennaguard-alertas.csv', ['evento;severidade;problema;inicio;fim',
+        ...alertas.map(a => `${a.id};${a.severidade};${a.nome};${dataHora(a.inicio)};${a.fim ? dataHora(a.fim) : 'ativo'}`)])}>
+        <DownloadSimple />Baixar
+      </Chip>}>
+      <ul className="flex flex-col gap-2">
+        {lista.map(a => {
+          const c = CRITICO.includes(a.severidade) ? 'var(--color-desastre)' : 'var(--color-media)'
+          return (
+            <li key={a.id}>
+              <Link to={`/alertas?id=${a.id}`} title={a.nome}
+                className={`flex h-[30px] items-center gap-2.5 rounded-full px-3 text-[12px] transition-colors hover:bg-[#34333b] ${a === destaque ? 'bg-[#2a2228] ring-1 ring-inset' : 'bg-painel-alto'}`}
+                style={{ '--tw-ring-color': c } as React.CSSProperties}>
+                <span className="size-1.5 shrink-0 rounded-full" style={{ background: c }} />
+                <b className="shrink-0 font-semibold text-tinta">{curto(a.nome)}</b>
+                <span className="num truncate text-tinta-2">às {dataHora(a.inicio).replace(',', '')} {a.ativo ? '(ativo)' : `(${duracao((a.fim ?? 0) - a.inicio)})`}</span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+      {alertas && (
+        <div className="num mt-4 flex items-center gap-4 border-t border-fio pt-3 text-[11.5px] text-tinta-2">
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-desastre" />Crítico <b className="font-semibold text-tinta">{criticos}</b></span>
+          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-media" />Aviso <b className="font-semibold text-tinta">{alertas.length - criticos}</b></span>
+          <span className="ml-auto">Total <b className="font-semibold text-tinta">{alertas.length}</b></span>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function CardChamados({ ch }: { ch: ListaChamados | null }) {
+  return (
+    <Card titulo="Seus chamados" acao={<Link to="/chamados?sg=novo"><Chip><Plus />Abrir</Chip></Link>}>
+      <ul className="flex flex-col gap-2">
+        {ch?.manuais.slice(0, 5).map(c => (
+          <li key={c.id}>
+            <Link to={`/chamados?sg=${c.id}`} title={c.titulo}
+              className="flex h-[30px] items-center gap-2.5 rounded-full bg-painel-alto px-3 text-[12px] transition-colors hover:bg-[#34333b]">
+              <b className="shrink-0 font-mono text-[11px] font-medium text-tinta-2">{c.numero}</b>
+              <span className="min-w-0 flex-1 truncate text-tinta">{c.titulo}</span>
+              <StatusChamado status={c.status} />
+            </Link>
+          </li>
+        ))}
+        {ch && !ch.manuais.length && <li className="py-8 text-center text-tinta-3">Nenhum chamado aberto.</li>}
+      </ul>
+      {ch && (
+        <div className="num mt-4 flex items-center gap-4 border-t border-fio pt-3 text-[11.5px] text-tinta-2">
+          <span>Em andamento <b className="font-semibold text-tinta">{ch.manuais.filter(c => c.status !== 'resolvido').length}</b></span>
+          <span className="ml-auto">Total <b className="font-semibold text-tinta">{ch.manuais.length}</b></span>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/** Equivalente ao "Door Activity": situação do caminho, trocas e uma régua com quedas (blocos) e alertas (riscos). */
+function CardCaminho({ pontos, v, alertas }: { pontos: Ponto[]; v: TVisao; alertas: Alerta[] }) {
+  const t0 = pontos[0]?.t ?? 0, t1 = pontos[pontos.length - 1]?.t ?? 1
+  const x = (t: number) => `${Math.min(100, Math.max(0, ((t - t0) / (t1 - t0)) * 100))}%`
+  const quedas = faixasSemResposta(pontos, 'fibra', '')
+  const noRadio = quedas.reduce((s, f) => s + (f.fim - f.ini), 0)
+  const naFibra = v.caminho === 'fibra'
+  const riscos = alertas.filter(a => a.inicio >= t0 && a.inicio <= t1)
+  return (
+    <Card titulo="Caminho ativo" acao={<Link to="/equipamentos"><Chip><ArrowsOut />Detalhes</Chip></Link>}>
+      <div className="grid grid-cols-3 divide-x divide-fio-forte text-[11px] text-tinta-2">
+        <div className="pr-3">
+          Situação
+          <div className="mt-1.5">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${naFibra ? 'bg-led/15 text-led' : 'bg-desastre/15 text-desastre'}`}>
+              <span className="size-1.5 rounded-full bg-current" />{naFibra ? 'Na fibra' : 'No rádio'}
+            </span>
           </div>
         </div>
-        <div><div className="text-[11px] text-tinta-3">Trocas</div><div className="num mt-1 font-semibold">{trocas}</div></div>
-        {v.ultimo_failover && <div><div className="text-[11px] text-tinta-3">Último failover</div><div className="num mt-1 font-semibold">{v.ultimo_failover.segundos.toLocaleString('pt-BR')} s</div></div>}
+        <div className="px-3">Trocas<div className="num mt-1 text-[16px] font-semibold text-tinta">{quedas.length}</div></div>
+        <div className="pl-3">No rádio<div className="num mt-1 text-[16px] font-semibold text-tinta">{noRadio ? duracao(noRadio) : '0 min'}</div></div>
       </div>
-      <div className="mt-5 flex h-14 items-end gap-[2px]" role="img" aria-label="Enlace que carregou o tráfego ao longo do período">
-        {amostra.map(p => {
-          const radio = p.fibra == null
-          const semBackup = p.radio == null
-          return <span key={p.t} title={`${hora(p.t)} · ${radio ? 'rádio' : 'fibra'}${semBackup ? ' · sem backup' : ''}`}
-            className="flex-1 rounded-[1px]"
-            style={{ height: radio ? '100%' : '55%', background: radio ? 'var(--color-radio)' : 'var(--color-fibra)', opacity: radio ? 0.95 : semBackup ? 0.25 : 0.55 }} />
-        })}
+      <div className="relative mt-5 h-[34px]" role="img" aria-label="Quedas da fibra (blocos) e alertas (riscos) no período">
+        {riscos.map(a => <span key={a.id} title={`${hora(a.inicio)} · ${a.nome}`} className="absolute inset-y-0 w-[2px] rounded-[1px] bg-[#6a5bd0]" style={{ left: x(a.inicio) }} />)}
+        {quedas.map(f => <span key={f.ini} title={`Fibra fora: ${hora(f.ini)} às ${hora(f.fim)}`} className="absolute inset-y-0 min-w-[10px] rounded-[2px] bg-[#9a3d50]" style={{ left: x(f.ini), width: `calc(${x(f.fim)} - ${x(f.ini)})` }} />)}
       </div>
-      <div className="num mt-2 flex justify-between text-[11px] text-tinta-3">
-        <span>{hora(amostra[0].t)}</span><span>{hora(amostra[Math.floor(amostra.length / 2)].t)}</span><span>{hora(amostra[amostra.length - 1].t)}</span>
+      <div className="num mt-2 flex justify-between border-t border-fio pt-1.5 text-[10.5px] text-tinta-3">
+        <span>{hora(t0)}</span><span>{hora((t0 + t1) / 2)}</span><span>{hora(t1)}</span>
       </div>
-    </div>
+    </Card>
   )
 }
+

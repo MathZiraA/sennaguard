@@ -2,7 +2,7 @@
 
 ## Direção
 
-Sala de NOC à noite. Um rack escuro com LEDs: o violeta do patch de fibra e o teal do enlace de rádio. Quem usa:
+Sala de NOC à noite, fiel à referência ThermiQ (Behance): grafite violeta, cards um tom acima, lavanda como destaque, rosa para crítico. O violeta é o patch de fibra e o teal é o enlace de rádio. Quem usa:
 - o operador de plantão, olhando a TV ou o notebook;
 - o cliente da Filial, abrindo um chamado.
 
@@ -21,7 +21,7 @@ Matriz ⇄ Filial com dois trilhos. A fibra fica em cima, em violeta, e o rádio
 | Fora | tracejado vermelho, cortado no meio |
 
 O trilho aparece em:
-- `Trilho` (herói da Visão);
+- `Trilho` (topo de Equipamentos, que é a página de topologia; a Visão segue a grade da referência);
 - `TrilhoMini` (28 px, nas listas de alertas e chamados, em vermelho no enlace atingido; o assunto é o texto antes do ":");
 - `Marca` (logotipo);
 - a faixa do topo do Login;
@@ -33,29 +33,31 @@ O trilho aparece em:
 
 | Token | Valor | Uso |
 | --- | --- | --- |
-| `rack` | #111015 | fundo, inclusive a barra lateral |
-| `painel` | #18171e | cards |
-| `painel-alto` | #211f29 | hover, menus, diálogos, botão quieto |
-| `fenda` | #0c0b10 | campos (afundados, mais escuros que o card) |
-| `tinta` / `-2` / `-3` / `-4` | #ecebf3 / #b3b0c2 / #7c798f / #4f4d5e | texto: principal / apoio / meta / desligado |
-| `fibra` | #9d8cfb | enlace principal **e** cor da marca/ação primária |
+| `lateral` | #17161b | barra lateral (um tom abaixo do fundo) |
+| `rack` | #1c1b21 | fundo da área de trabalho |
+| `painel` | #222127 | cards |
+| `painel-alto` | #2b2a31 | pílulas, chips, menus, diálogos |
+| `fenda` | #18171c | campos (afundados) |
+| `tinta` / `-2` / `-3` / `-4` | #f1f0f5 / #bdbbc6 / #8d8b97 / #5f5d68 | texto: principal / apoio / meta / desligado |
+| `fibra` | #8f7cf0 | enlace principal **e** cor da marca/ação primária |
 | `radio` | #5ccabf | enlace de backup, sinal em dBm |
-| `led` | #5bd68a | link up, livro íntegro |
-| `desastre` `alta` `media` `aviso` | #f0616d #f28b5e #e6b450 #e58fd0 | severidades do Zabbix. `media` também marca chamado SG aberto |
-| `fio` / `fio-forte` | branco 6% / 11% | bordas |
+| `led` | #3fcf86 | link up, livro íntegro |
+| `desastre` `alta` `media` `aviso` | #ee5d76 #ec7c8f #d08be6 #b39af4 | severidades. Na tela, crítico (Desastre/Alta) = rosa, aviso (Média/Aviso) = magenta. `media` também marca chamado SG aberto |
+| `limite` | #b9566f | linha tracejada do limite crítico nos gráficos |
+| `fio` / `fio-forte` | branco 7% / 13% | bordas e divisores |
 
 As cores de severidade só aparecem onde há problema. A tela em estado normal é quase toda cinza com violeta.
 
 ## Profundidade e forma
 
 - **Profundidade:** só bordas (`border-fio`), sem sombra em card. `shadow-2xl` fica só para menus e diálogos flutuantes.
-- **Raio:** `rounded-md` 6 px (chips internos), `rounded-lg` 8 px (botões, campos, linhas), `rounded-xl` 12 px (blocos internos, nós do trilho), `rounded-2xl` 16 px (cards e diálogos).
+- **Raio:** `rounded-md` 6 px (chips), 7 px (botões), `rounded-lg` 8 px (campos, itens de menu), 10 px (barra de contexto), `rounded-xl` 12 px (cards), `rounded-full` (pílulas de alerta).
 - **Brilho:** o `Led` (ponto de 6 px com `box-shadow` da própria cor) é o único brilho da interface. Ele pulsa (`.respira`) só quando o estado exige atenção.
 
 ## Tipografia
 
-- **Fontes:** Manrope Variable (interface) e JetBrains Mono (IPs, portas, `NOC-xxx`/`SG-xxx`, hashes). As duas vão empacotadas via @fontsource, porque a Filial pode estar sem internet.
-- **Escala:** base de 13 px. Meta 11 · corpo 13 · título de card 15/600 · título de página 20/600 com tracking −0.02em · frase-herói 22/600 · número-herói 28/600 tabular.
+- **Fontes:** Inter Variable (interface, como a referência) e JetBrains Mono (IPs, portas, `NOC-xxx`/`SG-xxx`, hashes). As duas vão empacotadas via @fontsource, porque a Filial pode estar sem internet.
+- **Escala:** base de 13 px. Meta 10.5–11 · corpo 13 · navegação 13.5 · título de card 17/600 com o valor ao lado em violeta 17/600 e "há X" 10.5 · título de página 22/500 `#d9d7e0` em formato migalha (`Enlaces › Matriz ⇄ Filial`).
 - **Hierarquia:** feita por peso e tinta, não só por tamanho. Valor 600/`tinta`, rótulo 500/`tinta-2`, meta 400/`tinta-3`.
 - **Números:** todo número dinâmico usa `.num` (tabular-nums).
 
@@ -63,19 +65,25 @@ As cores de severidade só aparecem onde há problema. A tela em estado normal �
 
 | Elemento | Medidas |
 | --- | --- |
-| Card | `p-5` (20 px); trilho `px-6` |
-| Gap entre blocos | `gap-4` (16 px) |
+| Card | `px-5 py-5`; card de gráfico `px-9 pt-7 pb-5` |
+| Gap entre blocos | `gap-3` (12 px) |
+| Barra de contexto | `min-h-[52px] px-7`, itens separados por divisor vertical de 20 px |
 | Linhas de lista | `px-3 py-2` (compactas) ou `px-5 py-3.5` (tabelas) |
-| Barra lateral | 232 px; itens `h-9` |
-| Cabeçalho | `h-14` |
-| Conteúdo | `max-w-[1320px]` |
+| Barra lateral | 240 px (recolhida 76 px); itens `h-10`, ícones Phosphor preenchidos 19 px; ativo `#3a3049` sem borda; ponto rosa/magenta no lugar de contador |
+| Cabeçalho | `h-[76px]`, sem linha; bloco da organização à esquerda (círculo branco + SENAI + NOC Matriz · Filial) |
+| Conteúdo | `max-w-[1400px] px-10` |
+| Grade da Visão | `[1fr_300px]`: Latência | Alertas / Tráfego | Caminho ativo |
 
 ## Componentes (`components/ui.tsx`, `Modal.tsx`, `Atendimento.tsx`)
 
-- **Botao:** `h-8`, `px-3`, `rounded-lg`, 12/500, `active:scale-[0.97]`. Variantes:
-  - `primario`: fundo `fibra`, texto `rack`;
-  - `quieto`: `painel-alto` com borda;
+- **Botao:** `h-8`, `px-3.5`, raio 7 px, 12.5/500, `active:scale-[0.97]`. Variantes:
+  - `primario`: fundo `fibra`, texto branco;
+  - `quieto`: cinza cheio `#3a3940` ("Exportar relatório");
+  - `contorno`: borda `#4a4952` ("Últimas 24 horas ▾");
   - `perigo`: vermelho a 12%.
+- **Chip:** `h-[26px]`, `px-2.5`, `rounded-md`, 11.5/500, `bg-painel-alto` ("Limites", "Baixar", "Detalhes"); ativo `bg-fibra/20`.
+- **Gráfico** (`Grafico.tsx`): sem eixo Y e sem grade; eixo X só com horas cheias; área violeta em gradiente (50% → 4%); acima do limite crítico, linha e área rosa; limites tracejados `6 5` com rótulo "Crítico : 30 ms" à esquerda; incidente = faixa rosa com borda e balão "⚠ Fibra fora / das hh:mm às hh:mm".
+- **Pílula de alerta:** `h-[30px]`, `rounded-full`, `bg-painel-alto`: ponto + nome curto 600 + "às dd/mm hh:mm (duração)". O alerta ativo mais grave ganha contorno na cor da severidade. Rodapé "● Crítico n · ● Aviso n · Total n".
 - **Campo:** `h-9` (login `h-10`), `bg-fenda`, `border-fio`, foco `border-fibra/60`.
 - **Escolha em cartões** (`Opcoes`, papel do usuário): rádio nativo `sr-only`. Selecionado com `border-fibra/60 bg-fibra/10`.
 - **Segmentado:** trilho `bg-fenda` p-0.5, item ativo `bg-painel-alto`.

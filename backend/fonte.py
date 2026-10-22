@@ -43,14 +43,14 @@ def _lat_fibra(t):
     if _queda_ini <= t <= _queda_fim:
         return None
     pico = 9 * math.exp(-((t - (_agora() - 9 * 3600)) / 1500) ** 2)  # degradação breve de manhã
-    return round(0.55 + 0.12 * math.sin(t / 2400) + random.uniform(0, 0.15) + pico, 2)
+    return round(0.6 + 0.12 * math.sin(t / 2400) + 0.06 * math.sin(t / 700) + random.uniform(0, 0.03) + pico, 2)
 
 
 def _lat_radio(t):
     if t >= _radio_ini:
         return None
     subida = 14 * math.exp(-((t - (_queda_ini + 600)) / 900) ** 2)  # carrega o tráfego durante a queda
-    return round(6.2 + 0.9 * math.sin(t / 3100) + random.uniform(0, 0.8) + subida, 2)
+    return round(6.2 + 1.2 * math.sin(t / 3100) + 0.5 * math.sin(t / 900) + random.uniform(0, 0.15) + subida, 2)
 
 
 def _sim_serie(metrica, horas):
@@ -64,9 +64,9 @@ def _sim_serie(metrica, horas):
             pontos.append({"t": t, "matriz": None if t >= _radio_ini else round(-53 + 1.6 * math.sin(t / 5000) + random.uniform(-.6, .6), 1),
                            "filial": None if t >= _radio_ini else round(-52 + 1.4 * math.sin(t / 4300) + random.uniform(-.6, .6), 1)})
         else:  # trafego em Mbps no caminho ativo
-            base = 38 + 22 * math.sin((t % 86400) / 86400 * 2 * math.pi - 1.9)
-            pontos.append({"t": t, "fibra": None if _queda_ini <= t <= _queda_fim else round(base + random.uniform(-4, 4), 1),
-                           "radio": None if t >= _radio_ini else round(base + random.uniform(-4, 4), 1) if _queda_ini <= t <= _queda_fim else round(random.uniform(.1, .4), 2)})
+            base = 38 + 22 * math.sin((t % 86400) / 86400 * 2 * math.pi - 1.9) + 5 * math.sin(t / 2600)
+            pontos.append({"t": t, "fibra": None if _queda_ini <= t <= _queda_fim else round(base + random.uniform(-0.15, 0.15), 1),
+                           "radio": None if t >= _radio_ini else round(base + random.uniform(-0.15, 0.15), 1) if _queda_ini <= t <= _queda_fim else round(random.uniform(.1, .4), 2)})
     random.seed()
     return pontos
 

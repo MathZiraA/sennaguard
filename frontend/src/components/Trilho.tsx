@@ -68,7 +68,7 @@ export default function Trilho({ v }: { v: Visao }) {
   const r = resumo(v)
   const f = v.ultimo_failover
   return (
-    <section className="rounded-2xl border border-fio bg-painel">
+    <section className="rounded-xl border border-fio bg-painel">
       <div className="flex flex-wrap items-end justify-between gap-6 px-6 pb-2 pt-5">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-medium text-tinta-3"><Led cor={r.cor} pulsa={r.cor !== 'var(--color-led)'} />Caminho ativo agora</div>

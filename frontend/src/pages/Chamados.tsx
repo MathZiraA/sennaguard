@@ -23,10 +23,10 @@ export default function Chamados() {
   const cliente = eu?.papel === 'Cliente'
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em]">Chamados</h1>
+          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Chamados</h1>
           <p className="mt-1 text-tinta-3">{cliente
             ? 'Abra um chamado quando algo não estiver funcionando na Filial e acompanhe o atendimento aqui.'
             : 'Chamados abertos pelas pessoas (SG-xxx) e os automáticos de quedas acima de 1 h (NOC-xxx).'}</p>

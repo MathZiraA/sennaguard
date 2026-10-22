@@ -1,37 +1,41 @@
 @import "tailwindcss";
 
-/* O mundo do NOC: rack escuro, LED de link, enlace de fibra (violeta) e de rádio (teal). */
+/* Sala do NOC à noite: grafite violeta, cards um tom acima, LED de link e enlace de fibra (violeta). */
 @theme {
-  --font-sans: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-rack: #111015;        /* fundo, mesma cor na barra lateral */
-  --color-painel: #18171e;      /* cards */
-  --color-painel-alto: #211f29; /* hover, menus, diálogos */
-  --color-fenda: #0c0b10;       /* campos: afundados no painel */
+  --color-lateral: #17161b;     /* barra lateral: um tom abaixo do fundo */
+  --color-rack: #1c1b21;        /* fundo da área de trabalho */
+  --color-painel: #222127;      /* cards */
+  --color-painel-alto: #2b2a31; /* pílulas, chips, menus, diálogos */
+  --color-fenda: #18171c;       /* campos: afundados no painel */
 
-  --color-tinta: #ecebf3;
-  --color-tinta-2: #b3b0c2;
-  --color-tinta-3: #7c798f;
-  --color-tinta-4: #4f4d5e;
+  --color-tinta: #f1f0f5;
+  --color-tinta-2: #bdbbc6;
+  --color-tinta-3: #8d8b97;
+  --color-tinta-4: #5f5d68;
 
-  --color-fibra: #9d8cfb;       /* enlace principal e cor da marca */
+  --color-fibra: #8f7cf0;       /* enlace principal e cor da marca */
   --color-radio: #5ccabf;       /* enlace de backup */
-  --color-led: #5bd68a;         /* link up */
+  --color-led: #3fcf86;         /* link up, situação normal */
 
-  --color-desastre: #f0616d;
-  --color-alta: #f28b5e;
-  --color-media: #e6b450;
-  --color-aviso: #e58fd0;
+  /* Severidades no tom da referência: vermelho-rosado para crítico, magenta-lilás para aviso */
+  --color-desastre: #ee5d76;
+  --color-alta: #ec7c8f;
+  --color-media: #d08be6;
+  --color-aviso: #b39af4;
 
-  --color-fio: rgb(255 255 255 / 0.06);
-  --color-fio-forte: rgb(255 255 255 / 0.11);
+  --color-fio: rgb(255 255 255 / 0.07);
+  --color-fio-forte: rgb(255 255 255 / 0.13);
+  --color-limite: #b9566f;      /* linhas de limite tracejadas dos gráficos */
 }
 
 html { color-scheme: dark; }
 body {
   @apply bg-rack text-tinta font-sans antialiased;
   font-size: 13px;
+  font-feature-settings: "cv11", "ss01";
 }
 h1, h2, h3 { text-wrap: balance; }
 .num { font-variant-numeric: tabular-nums; }

@@ -1,55 +1,93 @@
-import { Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, AreaChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { WarningCircle } from '@phosphor-icons/react'
 import type { Ponto } from '../lib/api'
 import { dataHora, hora } from '../lib/fmt'
 
-export type Limite = { valor: number; rotulo: string; cor: string }
+/** `critico` = linha vermelha tracejada (a área acima dela fica rosa); `normal` = referência da bancada. */
+export type Limite = { valor: number; rotulo: string; tipo: 'critico' | 'normal' }
 export type Faixa = { ini: number; fim: number; rotulo: string }
 
-const eixo = { fill: 'var(--color-tinta-3)', fontSize: 11 }
+const horaCurta = (t: number) => hora(t).replace(/^0/, '')
+const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: v < 10 ? 1 : 0 })
 
 export default function Grafico({ dados, serie, cor, unidade, limites = [], faixas = [], altura = 220 }: {
   dados: Ponto[]; serie: string; cor: string; unidade: string; limites?: Limite[]; faixas?: Faixa[]; altura?: number
 }) {
   const id = `g-${serie}`
+  const valores = dados.map(p => p[serie]).filter((v): v is number => v != null)
+  const maxDado = valores.length ? Math.max(...valores) : 1
+  // Escala sem eixo Y (como na referência): cabe o dado e os limites próximos dele
+  const visiveis = limites.filter(l => l.tipo === 'normal' || l.valor <= maxDado * 2.5)
+  const topo = Math.max(maxDado * 1.3, ...visiveis.map(l => l.valor * 1.2), 0.001)
+  const critico = visiveis.find(l => l.tipo === 'critico')
+  const corte = critico ? Math.min(1, Math.max(0, 1 - critico.valor / topo)) : 0
+  const t0 = dados[0]?.t ?? 0, t1 = dados[dados.length - 1]?.t ?? 1
+  const ultima = faixas[faixas.length - 1]
+  // Horas cheias no eixo (4:00, 6:00…), no máximo 7 marcas, alinhadas ao fuso local
+  const passo = [1, 2, 3, 4, 6, 12, 24].map(h => h * 3600).find(p => (t1 - t0) / p <= 7) ?? 86400
+  const fuso = new Date().getTimezoneOffset() * 60
+  const marcas: number[] = []
+  for (let t = Math.ceil((t0 - fuso) / passo) * passo + fuso; t <= t1; t += passo) marcas.push(t)
+
   return (
-    <ResponsiveContainer width="100%" height={altura}>
-      <AreaChart data={dados} margin={{ top: 8, right: 4, bottom: 0, left: -12 }}>
-        <defs>
-          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={cor} stopOpacity={0.32} />
-            <stop offset="100%" stopColor={cor} stopOpacity={0} />
-          </linearGradient>
-          <linearGradient id="faixa" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-desastre)" stopOpacity={0.28} />
-            <stop offset="100%" stopColor="var(--color-desastre)" stopOpacity={0.04} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid vertical={false} stroke="var(--color-fio)" />
-        <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={hora} tick={eixo} axisLine={false} tickLine={false} tickCount={8} />
-        <YAxis tick={eixo} axisLine={false} tickLine={false} width={44} tickFormatter={v => `${v}`} />
-        {faixas.map(f => (
-          <ReferenceArea key={f.ini} x1={f.ini} x2={f.fim} fill="url(#faixa)" stroke="var(--color-desastre)" strokeOpacity={0.35}
-            label={{ value: f.rotulo, position: 'insideTop', fill: 'var(--color-desastre)', fontSize: 11 }} />
-        ))}
-        {limites.map(l => (
-          <ReferenceLine key={l.rotulo} y={l.valor} stroke={l.cor} strokeOpacity={0.55} strokeDasharray="5 5"
-            label={{ value: `${l.rotulo} · ${l.valor} ${unidade}`, position: 'insideTopLeft', fill: l.cor, fontSize: 11 }} />
-        ))}
-        <Tooltip
-          cursor={{ stroke: 'var(--color-fio-forte)' }}
-          content={({ active, payload }) => active && payload?.length ? (
-            <div className="rounded-lg border border-fio-forte bg-painel-alto px-3 py-2 text-[12px] shadow-xl">
-              <div className="text-tinta-3">{dataHora(payload[0].payload.t)}</div>
-              <div className="num mt-0.5 font-semibold" style={{ color: cor }}>
-                {payload[0].value == null ? 'sem resposta' : `${payload[0].value} ${unidade}`}
+    <div className="relative">
+      {ultima && (
+        // Balão do incidente sobre a faixa, como o "8°C ⟷ 15°C" da referência
+        <div className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md bg-[#2c2b32] px-2.5 py-1.5 text-center shadow-lg"
+          style={{ left: `${Math.min(88, Math.max(12, (((ultima.ini + ultima.fim) / 2 - t0) / (t1 - t0)) * 100))}%` }}>
+          <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-desastre">
+            <WarningCircle size={13} weight="bold" />{ultima.rotulo}
+          </div>
+          <div className="num mt-0.5 whitespace-nowrap text-[10px] text-tinta-3">{dataHora(ultima.ini).split(' ')[0].replace(',', '')} das {hora(ultima.ini)} às {hora(ultima.fim)}</div>
+        </div>
+      )}
+      <ResponsiveContainer width="100%" height={altura}>
+        <AreaChart data={dados} margin={{ top: ultima ? 46 : 18, right: 0, bottom: 0, left: 0 }}>
+          <defs>
+            {/* Acima do limite crítico a linha e a área ficam rosa */}
+            <linearGradient id={`${id}-linha`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset={corte} stopColor="var(--color-desastre)" />
+              <stop offset={corte} stopColor={cor} />
+            </linearGradient>
+            <linearGradient id={`${id}-area`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset={0} stopColor="var(--color-desastre)" stopOpacity={0.5} />
+              <stop offset={corte} stopColor="var(--color-desastre)" stopOpacity={0.35} />
+              <stop offset={corte} stopColor={cor} stopOpacity={0.5} />
+              <stop offset={1} stopColor={cor} stopOpacity={0.04} />
+            </linearGradient>
+            <linearGradient id={`${id}-faixa`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-desastre)" stopOpacity={0.55} />
+              <stop offset="100%" stopColor="var(--color-desastre)" stopOpacity={0.12} />
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={horaCurta} ticks={marcas}
+            tick={{ fill: 'var(--color-tinta-3)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#3d3c44' }} dy={6} />
+          <YAxis hide domain={[0, topo]} />
+          {faixas.map(f => (
+            <ReferenceArea key={f.ini} x1={f.ini} x2={f.fim} y1={0} y2={topo} fill={`url(#${id}-faixa)`} stroke="var(--color-desastre)" strokeOpacity={0.7} ifOverflow="hidden" />
+          ))}
+          {visiveis.map(l => (
+            <ReferenceLine key={l.rotulo} y={l.valor} stroke={l.tipo === 'critico' ? 'var(--color-limite)' : '#6b5560'}
+              strokeDasharray="6 5" strokeWidth={1}
+              label={{ value: `${l.rotulo} : ${fmt(l.valor)} ${unidade}`, position: 'insideTopLeft', fill: 'var(--color-tinta-2)', fontSize: 11, dy: -2 }} />
+          ))}
+          <Tooltip
+            cursor={{ stroke: 'var(--color-fio-forte)' }}
+            content={({ active, payload }) => active && payload?.length ? (
+              <div className="rounded-md bg-[#2c2b32] px-2.5 py-1.5 text-[11px] shadow-xl">
+                <div className="text-tinta-3">{dataHora(payload[0].payload.t)}</div>
+                <div className="num mt-0.5 font-semibold" style={{ color: cor }}>
+                  {payload[0].value == null ? 'sem resposta' : `${fmt(Number(payload[0].value))} ${unidade}`}
+                </div>
               </div>
-            </div>
-          ) : null}
-        />
-        <Area type="monotone" dataKey={serie} stroke={cor} strokeWidth={1.75} fill={`url(#${id})`} connectNulls={false}
-          isAnimationActive={false} dot={false} activeDot={{ r: 3.5, fill: cor, stroke: 'var(--color-painel)', strokeWidth: 2 }} />
-      </AreaChart>
-    </ResponsiveContainer>
+            ) : null}
+          />
+          <Area type="monotone" dataKey={serie} stroke={`url(#${id}-linha)`} strokeWidth={1.6} fill={`url(#${id}-area)`}
+            connectNulls={false} isAnimationActive={false} dot={false}
+            activeDot={{ r: 3.5, fill: cor, stroke: 'var(--color-painel)', strokeWidth: 2 }} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 

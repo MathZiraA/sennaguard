@@ -39,10 +39,10 @@ export default function Usuarios() {
   const abrir = (u?: Usuario) => { setErro(''); setEditando(u ? { ...u, senha: '' } : { ...vazio }) }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em]">Usuários</h1>
+          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Usuários</h1>
           <p className="mt-1 text-tinta-3">Quem acessa o NOC e quem recebe os e-mails de alerta e de chamado.</p>
         </div>
         <Botao variante="primario" onClick={() => abrir()}><Plus />Novo usuário</Botao>
@@ -103,7 +103,7 @@ export default function Usuarios() {
 
       <Modal aberto={!!editando} onClose={() => setEditando(null)} titulo={editando?.id ? 'Editar usuário' : 'Novo usuário'}>
         {editando && (
-          <form onSubmit={salvar} className="flex flex-col gap-4">
+          <form onSubmit={salvar} className="flex flex-col gap-3">
             <Campo rotulo="Nome"><input required minLength={2} value={editando.nome} onChange={e => setEditando({ ...editando, nome: e.target.value })} className={campo} /></Campo>
             <Campo rotulo="E-mail"><input required type="email" value={editando.email} onChange={e => setEditando({ ...editando, email: e.target.value })} className={campo} /></Campo>
             <Campo rotulo={editando.id ? 'Nova senha (em branco mantém a atual)' : 'Senha inicial (mínimo 8)'}>

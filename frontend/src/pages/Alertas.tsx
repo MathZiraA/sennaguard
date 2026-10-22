@@ -20,10 +20,10 @@ export default function Alertas() {
   const aberto = dados?.find(a => a.id === params.get('id')) ?? null
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[20px] font-semibold tracking-[-0.02em]">Alertas</h1>
+          <h1 className="text-[22px] font-medium tracking-[-0.02em] text-[#d9d7e0]">Alertas</h1>
           <p className="mt-1 text-tinta-3">Problemas abertos pelos 9 triggers de redundância nos últimos 7 dias.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
