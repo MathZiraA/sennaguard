@@ -20,6 +20,20 @@ const LIMITES: Record<'fibra' | 'radio', Limite[]> = {
 
 const CRITICO = ['Desastre', 'Alta']
 
+/** Períodos prontos do relatório em PDF (segundos Unix). */
+function relatorios() {
+  const agora = Math.floor(Date.now() / 1000)
+  const inicioMes = new Date(); inicioMes.setDate(1); inicioMes.setHours(0, 0, 0, 0)
+  const mesPassado = new Date(inicioMes); mesPassado.setMonth(mesPassado.getMonth() - 1)
+  const s = (d: Date) => Math.floor(d.getTime() / 1000)
+  return [
+    { rotulo: 'Últimas 24 horas', de: agora - 86400, ate: agora },
+    { rotulo: 'Últimos 7 dias', de: agora - 7 * 86400, ate: agora },
+    { rotulo: 'Este mês', de: s(inicioMes), ate: agora },
+    { rotulo: `Mês passado (${mesPassado.toLocaleDateString('pt-BR', { month: 'long' })})`, de: s(mesPassado), ate: s(inicioMes) },
+  ]
+}
+
 /** Nome curto do trigger, para a pílula do alerta (o equivalente ao "12°C" da referência). */
 export function curto(nome: string) {
   const n = nome.toUpperCase()
@@ -81,7 +95,22 @@ export default function Visao() {
               </Menu.Content>
             </Menu.Portal>
           </Menu.Root>
-          <Botao onClick={exportar}><FileText />Exportar relatório</Botao>
+          <Menu.Root>
+            <Menu.Trigger asChild><Botao><FileText />Exportar relatório</Botao></Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Content align="end" sideOffset={6} className="z-50 min-w-56 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
+                {pode('relatorios') && <>
+                  <div className="px-2.5 pb-1 pt-1.5 text-[11px] text-tinta-3">Relatório de SLA (PDF)</div>
+                  {relatorios().map(r => (
+                    <Menu.Item key={r.rotulo} onSelect={() => window.open(`${import.meta.env.BASE_URL}api/relatorio.pdf?de=${r.de}&ate=${r.ate}`)}
+                      className="flex h-8 cursor-default items-center rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">{r.rotulo}</Menu.Item>
+                  ))}
+                  <div className="my-1 h-px bg-fio" />
+                </>}
+                <Menu.Item onSelect={exportar} className="flex h-8 cursor-default items-center rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">Latência do período (CSV)</Menu.Item>
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu.Root>
         </div>
       </div>
 

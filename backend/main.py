@@ -17,6 +17,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 import agenda
 import atendimento
+import manutencao
+import relatorio
 import auth
 import fonte
 import livro
@@ -30,7 +32,7 @@ PAPEIS = ("Administrador", "Analista", "Operador", "Cliente")
 SENHA_DEMO = "senai2026"  # só no modo simulação
 
 app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
-for r in (tempo_real.router, telegram.router, tv.router):
+for r in (tempo_real.router, telegram.router, tv.router, relatorio.router, manutencao.router):
     app.include_router(r)
 
 
@@ -47,6 +49,7 @@ def iniciar():
         atendimento.criar_tabelas(con)
         telegram.criar_tabelas(con)
         tv.criar_tabelas(con)
+        manutencao.criar_tabelas(con)
         con.execute("""create table if not exists avaliacoes_ia (eventid text, usuario_id integer, util integer, em integer,
                        primary key (eventid, usuario_id))""")
         if fonte.SIMULACAO and not con.execute("select 1 from usuarios").fetchone():
@@ -144,7 +147,7 @@ def visao(_=auth.exigir("visao")):
 
 @app.get("/api/serie/{metrica}")
 def serie(metrica: Literal["latencia", "trafego", "sinal"], horas: int = 24, _=auth.exigir("visao")):
-    return fonte.serie(metrica, min(horas, 168))
+    return fonte.serie(metrica, min(horas, 744))
 
 
 JANELA_INCIDENTE = 60  # mesma janela do Analista IA: eventos do mesmo host em 60 s viram um incidente
@@ -297,6 +300,14 @@ def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
 @app.get("/api/equipamentos")
 def equipamentos(_=auth.exigir("equipamentos")):
     return fonte.equipamentos()
+
+
+@app.get("/api/equipamentos/{nome}")
+def equipamento(nome: str, _=auth.exigir("equipamentos")):
+    e = fonte.detalhe_equipamento(nome)
+    if not e:
+        raise HTTPException(404, "Equipamento não encontrado no Zabbix.")
+    return e
 
 
 # ---------------------------------------------------------------- usuários (só Administrador)

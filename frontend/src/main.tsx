@@ -5,6 +5,7 @@ import Shell from './components/Shell'
 import { ProvedorSessao, useSessao } from './lib/sessao'
 import Login from './pages/Login'
 import Tv from './pages/Tv'
+import Manutencoes from './pages/Manutencao'
 import Visao from './pages/Visao'
 import Alertas from './pages/Alertas'
 import Chamados from './pages/Chamados'
@@ -36,6 +37,7 @@ function App() {
         <Route path="chamados" element={<Exige permissao="chamados"><Chamados /></Exige>} />
         <Route path="equipamentos" element={<Exige permissao="equipamentos"><Equipamentos /></Exige>} />
         <Route path="usuarios" element={<Exige permissao="usuarios"><Usuarios /></Exige>} />
+        <Route path="manutencao" element={<Exige permissao="equipamentos"><Manutencoes /></Exige>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

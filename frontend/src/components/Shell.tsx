@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Bell, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, List, Moon, SignOut, Siren, Sun, TelegramLogo, Ticket, UsersThree } from '@phosphor-icons/react'
+import { Bell, Wrench, CaretDoubleLeft, CaretDoubleRight, ChartLineUp, DotsThree, Key, Lifebuoy, HardDrives, List, Moon, SignOut, Siren, Sun, TelegramLogo, Ticket, UsersThree } from '@phosphor-icons/react'
 import { api, iniciarTempoReal, pararTempoReal, useApi, type Alerta, type ListaChamados } from '../lib/api'
 import { alternarTema, temaAtual } from '../lib/tema'
+import { situacao, type Manutencao } from '../pages/Manutencao'
+import { dataHora } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import Modal from './Modal'
 import { Botao } from './ui'
@@ -14,6 +16,7 @@ const NAV = [
   { para: '/alertas', rotulo: 'Alertas e incidentes', icone: Siren, permissao: 'alertas' },
   { para: '/chamados', rotulo: 'Chamados', icone: Ticket, permissao: 'chamados' },
   { para: '/equipamentos', rotulo: 'Equipamentos', icone: HardDrives, permissao: 'equipamentos' },
+  { para: '/manutencao', rotulo: 'Manutenção', icone: Wrench, permissao: 'equipamentos' },
   { para: '/usuarios', rotulo: 'Usuários', icone: UsersThree, permissao: 'usuarios' },
 ]
 
@@ -28,6 +31,11 @@ export default function Shell() {
   const { dados: ch } = useApi<ListaChamados>(pode('atender_chamado') ? '/api/chamados' : '', 60000, ['chamados'])
   const semDono = ch?.manuais.filter(c => c.status === 'aberto').length ?? 0
   const ativos = alertas?.filter(a => a.ativo && !a.reconhecido).length ?? 0
+  // Faixa de manutenção: em andamento, ou começando nas próximas 24 h (aparece também para o cliente)
+  const { dados: janelas } = useApi<Manutencao[]>('/api/manutencoes', 60000, ['manutencao'])
+  const agora = Date.now() / 1000
+  const janela = janelas?.find(m => !m.cancelada_em && m.inicio <= agora && agora < m.fim)
+    ?? janelas?.find(m => !m.cancelada_em && m.inicio > agora && m.inicio - agora < 86400)
   const ponto: Record<string, string | null> = {
     '/alertas': ativos ? 'var(--color-desastre)' : null,
     '/chamados': semDono ? 'var(--color-media)' : null,
@@ -141,6 +149,15 @@ export default function Shell() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-8 pt-2 md:px-10">
+          {janela && (
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[10px] border border-media/35 bg-media/10 px-5 py-3 text-[13px]">
+              <Wrench size={17} weight="fill" className="text-media" />
+              <b className="font-semibold">{situacao(janela).texto === 'Em andamento' ? 'Manutenção em andamento' : 'Manutenção programada'}:</b>
+              <span>{janela.titulo}</span>
+              <span className="num text-tinta-2">· {dataHora(janela.inicio)} até {dataHora(janela.fim)}</span>
+              {janela.descricao && <span className="w-full text-[12px] text-tinta-2">{janela.descricao}</span>}
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

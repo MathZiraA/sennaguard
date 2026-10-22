@@ -45,13 +45,15 @@ function Linha({ nome, e, est }: { nome: 'fibra' | 'radio'; e: Enlace; est: Esta
   )
 }
 
-function No({ nome, ip, lan, lado }: { nome: string; ip: string; lan: string; lado: 'esq' | 'dir' }) {
+function No({ nome, ip, lan, lado, onNo }: { nome: string; ip: string; lan: string; lado: 'esq' | 'dir'; onNo?: (nome: string) => void }) {
+  const Tag = onNo ? 'button' : 'div'
   return (
-    <div className={`w-[132px] shrink-0 rounded-xl border border-fio-forte bg-painel-alto px-3.5 py-3 ${lado === 'dir' ? 'text-right' : ''}`}>
+    <Tag onClick={onNo ? () => onNo(nome) : undefined} title={onNo ? `Ver interfaces e recursos de ${nome}` : undefined}
+      className={`w-[132px] shrink-0 rounded-xl border border-fio-forte bg-painel-alto px-3.5 py-3 text-left transition-colors ${lado === 'dir' ? 'text-right' : ''} ${onNo ? 'cursor-pointer hover:border-fibra/60 hover:bg-pilula-hover' : ''}`}>
       <div className="text-[11px] font-medium text-tinta-3">{lado === 'esq' ? 'Matriz' : 'Filial'}</div>
       <div className="mt-0.5 font-semibold">{nome}</div>
       <div className="mt-2 font-mono text-[11px] leading-relaxed text-tinta-3">{ip}<br />{lan}</div>
-    </div>
+    </Tag>
   )
 }
 
@@ -64,7 +66,7 @@ export function resumo(v: Visao) {
   return { texto: 'Tráfego pela fibra, rádio pronto para assumir.', cor: 'var(--color-led)' }
 }
 
-export default function Trilho({ v }: { v: Visao }) {
+export default function Trilho({ v, onNo }: { v: Visao; onNo?: (nome: string) => void }) {
   const r = resumo(v)
   const f = v.ultimo_failover
   return (
@@ -90,12 +92,12 @@ export default function Trilho({ v }: { v: Visao }) {
         )}
       </div>
       <div className="flex items-center gap-4 px-6 pb-6 pt-4">
-        <No nome="R-MATRIZ" ip="10.255.255.1" lan="192.168.10.0/24" lado="esq" />
+        <No nome="R-MATRIZ" ip="10.255.255.1" lan="192.168.10.0/24" lado="esq" onNo={onNo} />
         <div className="flex min-w-0 flex-1 flex-col gap-7 pb-3">
           <Linha nome="fibra" e={v.enlaces.fibra} est={estado('fibra', v.enlaces.fibra, v.caminho)} />
           <Linha nome="radio" e={v.enlaces.radio} est={estado('radio', v.enlaces.radio, v.caminho)} />
         </div>
-        <No nome="R-FILIAL" ip="10.255.255.2" lan="192.168.20.0/24" lado="dir" />
+        <No nome="R-FILIAL" ip="10.255.255.2" lan="192.168.20.0/24" lado="dir" onNo={onNo} />
       </div>
     </section>
   )

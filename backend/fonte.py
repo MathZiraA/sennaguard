@@ -61,8 +61,8 @@ def _sim_serie(metrica, horas):
         if metrica == "latencia":
             pontos.append({"t": t, "fibra": _lat_fibra(t), "radio": _lat_radio(t)})
         elif metrica == "sinal":
-            pontos.append({"t": t, "matriz": None if t >= _radio_ini else round(-53 + 1.6 * math.sin(t / 5000) + random.uniform(-.6, .6), 1),
-                           "filial": None if t >= _radio_ini else round(-52 + 1.4 * math.sin(t / 4300) + random.uniform(-.6, .6), 1)})
+            pontos.append({"t": t, "matriz": None if t >= _radio_ini else round(-53 + 1.6 * math.sin(t / 5000) + random.uniform(-.1, .1), 1),
+                           "filial": None if t >= _radio_ini else round(-52 + 1.4 * math.sin(t / 4300) + random.uniform(-.1, .1), 1)})
         else:  # trafego em Mbps no caminho ativo
             base = 38 + 22 * math.sin((t % 86400) / 86400 * 2 * math.pi - 1.9) + 5 * math.sin(t / 2600)
             pontos.append({"t": t, "fibra": None if _queda_ini <= t <= _queda_fim else round(base + random.uniform(-0.15, 0.15), 1),
@@ -136,6 +136,8 @@ def visao():
 
     fibra, radio = enlace(FIBRA_IP), enlace(RADIO_IP)
     fibra.update(porta="sfp1", custo=10, ip=FIBRA_IP)
+    sinal = _item_sinal(ANTENA_FILIAL)
+    radio["sinal"] = round(float(sinal["lastvalue"]), 1) if sinal and sinal.get("lastvalue") not in ("", None) and radio["up"] else None
     radio.update(porta="ether1", custo=100, ip=RADIO_IP)
     # Item calculado do noc-senai-tcc: fibra*2 + rádio -> 3/2 = FIBRA, 1 = RÁDIO, 0 = ISOLADA
     valor = caminho[0]["lastvalue"] if caminho and caminho[0]["lastvalue"] not in ("", None) else None
@@ -162,6 +164,9 @@ def serie(metrica, horas):
     if metrica == "latencia":
         itens = {"fibra": item(search={"key_": f"icmppingsec[{FIBRA_IP},"}), "radio": item(search={"key_": f"icmppingsec[{RADIO_IP},"})}
         escala = 1000  # segundos -> ms
+    elif metrica == "sinal":
+        itens = {lado: _item_sinal(nome) for lado, nome in (("matriz", ANTENA_MATRIZ), ("filial", ANTENA_FILIAL))}
+        escala = 1  # já vem em dBm
     else:  # tráfego: interfaces do template "Mikrotik by SNMP"
         rec = call("item.get", {"hostids": h["hostid"], "output": ["itemid", "value_type", "name"], "search": {"name": "Bits received"}})
         achar = lambda *nomes: next((i for i in rec if any(n.lower() in i["name"].lower() for n in nomes)), None)
@@ -223,6 +228,73 @@ def reconhecer(eventid, mensagem=""):
         return True
     call("event.acknowledge", {"eventids": [eventid], "action": 2 | (4 if mensagem else 0), "message": mensagem})
     return True
+
+
+ANTENA_MATRIZ = os.environ.get("NOC_ANTENA_MATRIZ_HOST", "RADIO-P2P-MATRIZ")
+ANTENA_FILIAL = os.environ.get("NOC_ANTENA_FILIAL_HOST", "RADIO-P2P-FILIAL")
+
+
+def _item_sinal(host):
+    """Item de intensidade do sinal (dBm) da antena; a busca por nome ignora maiúsculas no Zabbix."""
+    h = call("host.get", {"filter": {"host": [host]}, "output": ["hostid"]})
+    if not h:
+        return None
+    r = call("item.get", {"hostids": h[0]["hostid"], "search": {"name": "signal"}, "output": ["itemid", "value_type", "name", "lastvalue"]})
+    return next((i for i in r if "noise" not in i["name"].lower()), None)
+
+
+def _sim_detalhe(e):
+    t = _agora()
+    radio_fora = t >= _radio_ini
+    base = {"recursos": None, "interfaces": [], "sinal": None}
+    if e["tipo"] == "roteador":
+        filial = e["local"] == "Filial"
+        trafego = 38 + 22 * math.sin((t % 86400) / 86400 * 2 * math.pi - 1.9)
+        base["recursos"] = {"cpu": 4 if filial else 7, "memoria": 21 if filial else 24, "uptime": 6 * 86400 + 3 * 3600, "routeros": "7.24.5"}
+        base["interfaces"] = [
+            {"nome": "sfp1-WAN-FIBRA", "papel": "fibra (principal)", "up": True, "rx": round(trafego, 1), "tx": round(trafego * .3, 1)},
+            {"nome": "ether1-WAN-RADIO", "papel": "rádio (backup)", "up": not radio_fora, "rx": 0.2 if not radio_fora else 0, "tx": 0.1 if not radio_fora else 0},
+            {"nome": "ether2", "papel": "internet da escola" if not filial else "reserva", "up": not filial, "rx": 4.1 if not filial else 0, "tx": 1.2 if not filial else 0},
+            {"nome": "ether3", "papel": "rede local", "up": True, "rx": round(trafego * .6, 1), "tx": round(trafego * .2, 1)},
+            {"nome": "ether4", "papel": "rede local", "up": True, "rx": round(trafego * .3, 1), "tx": round(trafego * .1, 1)},
+            {"nome": "ether5", "papel": "rede local", "up": False, "rx": 0, "tx": 0},
+        ]
+    elif e["tipo"] == "antena":
+        fora = radio_fora and e["local"] == "Filial"
+        base["sinal"] = None if fora else e.get("sinal")
+        base["recursos"] = None if fora else {"ccq": 98, "distancia_m": 180, "frequencia": "5.745 GHz"}
+    return base
+
+
+def detalhe_equipamento(nome):
+    """Ficha do equipamento para o mapa: recursos, interfaces com tráfego e sinal (antenas)."""
+    if SIMULACAO:
+        e = next((e for e in equipamentos() if e["nome"] == nome), None)
+        return dict(e, **_sim_detalhe(e)) if e else None
+    h = call("host.get", {"filter": {"host": [nome]}, "output": ["hostid", "host"], "selectInterfaces": ["ip"]})
+    if not h:
+        return None
+    itens = call("item.get", {"hostids": h[0]["hostid"], "output": ["name", "lastvalue", "units"]})
+    valor = lambda trecho: next((i["lastvalue"] for i in itens if trecho in i["name"].lower()), None)
+    ifs = {}
+    for i in itens:
+        n = i["name"]
+        if n.startswith("Interface ") and ":" in n:
+            nome_if = n[len("Interface "):n.index(":")].split("(")[0].strip()
+            d = ifs.setdefault(nome_if, {"nome": nome_if, "papel": "", "up": None, "rx": None, "tx": None})
+            if "Operational status" in n:
+                d["up"] = i["lastvalue"] == "1"
+            elif "Bits received" in n:
+                d["rx"] = round(float(i["lastvalue"] or 0) / 1e6, 1)
+            elif "Bits sent" in n:
+                d["tx"] = round(float(i["lastvalue"] or 0) / 1e6, 1)
+    sinal = _item_sinal(nome)
+    cpu, mem, up = valor("cpu utilization"), valor("memory utilization"), valor("uptime")
+    return {"nome": nome, "tipo": _tipo(nome), "ip": h[0]["interfaces"][0]["ip"] if h[0].get("interfaces") else "",
+            "recursos": {"cpu": round(float(cpu)) if cpu else None, "memoria": round(float(mem)) if mem else None,
+                         "uptime": int(float(up)) if up else None},
+            "interfaces": sorted(ifs.values(), key=lambda d: d["nome"]),
+            "sinal": round(float(sinal["lastvalue"]), 1) if sinal and sinal.get("lastvalue") else None}
 
 
 _SIM_EQUIP = [
