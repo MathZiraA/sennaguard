@@ -87,7 +87,7 @@ export default function Visao() {
   const painel = rascunho ?? montar(eu?.painel ?? null, padrao)
 
   const periodo = recorte ? `de=${recorte.de}&ate=${recorte.ate}` : `horas=${horas}`
-  const ao_vivo = recorte ? 0 : 60000
+  const ao_vivo = recorte ? 0 : 10000 // mesmo ritmo do /api/visao: o Zabbix coleta a latência a cada 10 s
   const { dados: v } = useApi<TVisao>('/api/visao', 10000, ['visao'])
   const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : ['visao'])
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?${periodo}`, ao_vivo)
