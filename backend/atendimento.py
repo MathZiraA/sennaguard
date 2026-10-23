@@ -1,12 +1,15 @@
 """Chamados abertos pelas pessoas (cliente da Filial ou equipe), numerados SG-<n>.
 
-Cada passo (abertura, comentário, mudança de status) entra em `chamado_registros`, encadeado por
-SHA-256 como o livro dos chamados automáticos: alterar ou apagar um registro quebra a cadeia.
+Cada passo (abertura, comentário, nota interna, mudança de status) entra em `chamado_registros`, encadeado
+por SHA-256 como o livro dos chamados automáticos: alterar ou apagar um registro quebra a cadeia.
+"Nota" é a mensagem interna da equipe: o cliente não vê e ela não conta como primeira resposta no SLA.
 """
 import hashlib
 import json
 import sqlite3
 import time
+
+from banco import coluna
 
 STATUS = ("aberto", "em_atendimento", "resolvido")
 CATEGORIAS = ("sem_acesso", "lentidao", "instavel", "outro")
@@ -24,6 +27,10 @@ def criar_tabelas(con: sqlite3.Connection):
     con.execute("""create table if not exists chamado_registros (
         seq integer primary key, chamado_id integer not null, acao text not null, autor_id integer,
         autor_nome text, autor_papel text, texto text, em integer not null, hash_anterior text not null, hash text not null)""")
+    coluna(con, "chamado_registros", "anexos", "text")
+    # "Visto às": até qual registro cada pessoa já leu, e quando
+    con.execute("""create table if not exists chamado_vistos (
+        chamado_id integer not null, usuario_id integer not null, nome text, lado text not null, seq integer not null, em integer not null)""")
 
 
 def _hash(anterior, registro):
@@ -31,16 +38,23 @@ def _hash(anterior, registro):
     return hashlib.sha256((anterior + corpo).encode()).hexdigest()
 
 
-def registrar(con, chamado_id, acao, autor, texto=""):
+def registrar(con, chamado_id, acao, autor, texto="", anexos=None):
     ultimo = con.execute("select hash from chamado_registros order by seq desc limit 1").fetchone()
     anterior = ultimo[0] if ultimo else "0" * 64
     seq = (con.execute("select coalesce(max(seq), 0) from chamado_registros").fetchone()[0]) + 1
     r = {"seq": seq, "chamado_id": chamado_id, "acao": acao, "autor_id": autor["id"], "autor_nome": autor["nome"],
          "autor_papel": autor["papel"], "texto": texto, "em": int(time.time())}
+    if anexos:  # só entra no hash quando existe: os registros antigos continuam batendo
+        r["anexos"] = anexos
     h = _hash(anterior, r)
-    con.execute("insert into chamado_registros values (?,?,?,?,?,?,?,?,?,?)",
-                (seq, chamado_id, acao, autor["id"], autor["nome"], autor["papel"], texto, r["em"], anterior, h))
+    con.execute("""insert into chamado_registros (seq,chamado_id,acao,autor_id,autor_nome,autor_papel,texto,em,hash_anterior,hash,anexos)
+                   values (?,?,?,?,?,?,?,?,?,?,?)""",
+                (seq, chamado_id, acao, autor["id"], autor["nome"], autor["papel"], texto, r["em"], anterior, h,
+                 json.dumps(anexos, ensure_ascii=False) if anexos else None))
+    if anexos:
+        con.execute(f"update anexos set seq=? where id in ({','.join('?' * len(anexos))})", [seq, *[a["id"] for a in anexos]])
     con.execute("update chamados_manuais set atualizado_em=? where id=?", (r["em"], chamado_id))
+    return seq
 
 
 def verificar(con):
@@ -48,6 +62,8 @@ def verificar(con):
     for row in con.execute("select * from chamado_registros order by seq"):
         r = dict(row)
         n += 1
+        if anexos := r.pop("anexos", None):
+            r["anexos"] = json.loads(anexos)
         if r.pop("hash_anterior") != anterior:
             return {"ok": False, "registros": n, "quebra": r["seq"], "motivo": "registro fora de ordem ou apagado"}
         h = r.pop("hash")
@@ -95,9 +111,44 @@ def listar(con, usuario):
     return _com_sla(con, [_publico(r) for r in con.execute(q + " order by (c.status='resolvido'), c.atualizado_em desc")])
 
 
+def visivel(con, cid, usuario, seq=None):
+    """O usuário pode ver o chamado (e, se `seq` vier, aquele registro)? Cliente: só os dele e sem notas internas."""
+    if usuario["papel"] != "Cliente":
+        return True
+    dono = con.execute("select 1 from chamados_manuais where id=? and aberto_por=?", (cid, usuario["id"])).fetchone()
+    if not dono or seq is None:
+        return bool(dono)
+    return not con.execute("select 1 from chamado_registros where seq=? and acao='nota'", (seq,)).fetchone()
+
+
+def _lado(usuario):
+    return "cliente" if usuario["papel"] == "Cliente" else "equipe"
+
+
+def marcar_visto(con, cid, usuario):
+    """Grava que o usuário leu até o último registro que ele enxerga. True se avançou (avisa o outro lado)."""
+    nota = " and acao != 'nota'" if usuario["papel"] == "Cliente" else ""
+    ultimo = con.execute(f"select max(seq) from chamado_registros where chamado_id=?{nota}", (cid,)).fetchone()[0]
+    lido = con.execute("select max(seq) from chamado_vistos where chamado_id=? and usuario_id=?", (cid, usuario["id"])).fetchone()[0]
+    if ultimo is None or (lido is not None and lido >= ultimo):
+        return False
+    con.execute("insert into chamado_vistos values (?,?,?,?,?,?)", (cid, usuario["id"], usuario["nome"], _lado(usuario), ultimo, int(time.time())))
+    return True
+
+
 def detalhe(con, cid, usuario):
     c = next((x for x in listar(con, usuario) if x["id"] == cid), None)
-    if c:
-        c["registros"] = [dict(r) for r in con.execute(
-            "select seq, acao, autor_nome, autor_papel, texto, em, hash from chamado_registros where chamado_id=? order by seq", (cid,))]
+    if not c:
+        return None
+    nota = " and acao != 'nota'" if usuario["papel"] == "Cliente" else ""
+    vistos = con.execute("select lado, seq, em, nome from chamado_vistos where chamado_id=? order by em", (cid,)).fetchall()
+    c["registros"] = []
+    for row in con.execute(f"select seq, acao, autor_nome, autor_papel, texto, em, hash, anexos from chamado_registros where chamado_id=?{nota} order by seq", (cid,)):
+        r = dict(row)
+        r["anexos"] = [{k: a[k] for k in ("id", "nome", "tipo", "tamanho")} for a in json.loads(r["anexos"])] if r["anexos"] else []
+        # Mensagem visível ao outro lado: quando ele leu pela primeira vez (cliente ⇄ equipe)
+        outro = "equipe" if r["autor_papel"] == "Cliente" else "cliente"
+        v = next((v for v in vistos if v["lado"] == outro and v["seq"] >= r["seq"]), None) if r["acao"] in ("abertura", "comentario") else None
+        r["visto"] = {"em": v["em"], "por": v["nome"]} if v else None
+        c["registros"].append(r)
     return c

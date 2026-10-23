@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { corSev } from '../lib/fmt'
 
 export function Card({ titulo, extra, acao, children, className = '' }: {
@@ -36,14 +36,16 @@ const variantes: Record<Variante, string> = {
   perigo: 'bg-desastre/12 text-desastre border border-desastre/25 hover:bg-desastre/20',
 }
 
-export function Botao({ variante = 'quieto', className = '', ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variante?: Variante }) {
+/** forwardRef: o Radix (menus com asChild) precisa medir o botão para posicionar o menu embaixo dele. */
+export const Botao = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { variante?: Variante }>(function Botao({ variante = 'quieto', className = '', ...p }, ref) {
   return (
     <button
+      ref={ref}
       {...p}
       className={`inline-flex h-8 items-center gap-1.5 rounded-[7px] px-3.5 text-[12.5px] font-medium transition-[background-color,color,border-color,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5 ${variantes[variante]} ${className}`}
     />
   )
-}
+})
 
 /** Ponto de status no estilo do LED do equipamento. */
 export function Led({ cor, pulsa = false }: { cor: string; pulsa?: boolean }) {
@@ -83,4 +85,18 @@ export function Vazio({ children }: { children: ReactNode }) {
 
 export function Carregando() {
   return <div className="h-40 animate-pulse rounded-2xl bg-painel" />
+}
+
+/** Interruptor liga/desliga com rótulo à esquerda; `dica` aparece em cinza embaixo do rótulo. */
+export function Chave({ rotulo, ligado, onChange, dica, desligado = false }: { rotulo: ReactNode; ligado: boolean; onChange: (v: boolean) => void; dica?: string; desligado?: boolean }) {
+  return (
+    <label className={`flex items-center justify-between gap-4 text-tinta-2 ${desligado ? 'pointer-events-none opacity-40' : 'cursor-pointer'}`}>
+      <span className="min-w-0">{rotulo}{dica && <span className="mt-0.5 block text-[11px] leading-snug text-tinta-3">{dica}</span>}</span>
+      <span className="relative shrink-0">
+        <input type="checkbox" role="switch" checked={ligado} disabled={desligado} onChange={e => onChange(e.target.checked)} className="peer sr-only" />
+        <span className="block h-5 w-9 rounded-full bg-painel-alto ring-1 ring-fio-forte transition-colors peer-checked:bg-fibra peer-focus-visible:outline-2 peer-focus-visible:outline-fibra" />
+        <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-tinta transition-transform duration-150 peer-checked:translate-x-4" />
+      </span>
+    </label>
+  )
 }

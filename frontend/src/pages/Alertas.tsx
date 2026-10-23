@@ -54,7 +54,30 @@ export default function Alertas() {
       {!dados ? <Carregando /> : (
         <Card className="!p-0">
           {lista.length === 0 ? <div className="p-5"><Vazio>Nenhum alerta com esse filtro.</Vazio></div> : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left">
+            <>
+            {/* Celular: cartões empilhados (o incidente mostra só o primeiro alerta, com a contagem) */}
+            <ul className="flex flex-col md:hidden">
+              {grupos.map(g => {
+                const a = g[0]
+                return (
+                  <li key={a.id} className="border-b border-fio last:border-0">
+                    <button onClick={() => setParams({ id: a.id })} className="flex w-full flex-col gap-2 px-4 py-3.5 text-left">
+                      <span className="flex items-start gap-3">
+                        <TrilhoMini nome={a.nome} />
+                        <span className="min-w-0 flex-1 font-medium leading-snug">{a.nome}</span>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                        <Sev nome={a.severidade} />
+                        <span className="num text-tinta-3">{dataHora(a.inicio)} · {duracao((a.fim ?? Date.now() / 1000) - a.inicio)}</span>
+                        {g.length > 1 && <span className="rounded-md bg-painel-alto px-1.5 py-0.5 text-[11px] text-tinta-2">+{g.length - 1} no incidente</span>}
+                      </span>
+                      <Situacao a={a} />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left">
               <thead className="text-[11px] font-medium text-tinta-3">
                 <tr className="border-b border-fio">
                   <th className="py-3 pl-5 font-medium">Problema</th>
@@ -97,6 +120,7 @@ export default function Alertas() {
                 })}
               </tbody>
             </table></div>
+            </>
           )}
         </Card>
       )}

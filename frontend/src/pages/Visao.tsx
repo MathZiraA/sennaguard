@@ -1,15 +1,20 @@
-import { useState } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { ArrowsOut, CaretDown, CaretRight, CellSignalFull, CellSignalX, Cpu, DownloadSimple, FileText, LinkBreak, LinkSimple, Plus, SlidersHorizontal } from '@phosphor-icons/react'
-import { useApi, type Alerta, type ListaChamados, type Ponto, type Visao as TVisao } from '../lib/api'
+import { ArrowDown, ArrowsOut, ArrowUp, CalendarBlank, CaretDown, CaretRight, CellSignalFull, CellSignalX, Cpu, DotsSixVertical, DownloadSimple, Eye, EyeSlash, FileText, LinkBreak, LinkSimple, MagnifyingGlassMinus, Plus, SlidersHorizontal, SquaresFour } from '@phosphor-icons/react'
+import { api, useApi, type Alerta, type ListaChamados, type Painel, type Ponto, type Visao as TVisao } from '../lib/api'
 import { dataHora, desde, duracao, hora } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import Grafico, { faixasSemResposta, type Limite } from '../components/Grafico'
 import { StatusChamado } from '../components/Atendimento'
+import Modal from '../components/Modal'
 import { Botao, Card, Carregando, Chip } from '../components/ui'
 
-const periodos = [{ h: 6, r: 'Últimas 6 horas' }, { h: 24, r: 'Últimas 24 horas' }, { h: 72, r: 'Últimos 3 dias' }, { h: 168, r: 'Últimos 7 dias' }]
+const periodos = [
+  { h: 1, r: 'Última hora' }, { h: 6, r: 'Últimas 6 horas' }, { h: 24, r: 'Últimas 24 horas' },
+  { h: 168, r: 'Últimos 7 dias' }, { h: 720, r: 'Últimos 30 dias' },
+]
+type Recorte = { de: number; ate: number }
 
 // Limites reais do projeto: troca automática da fibra em 30 ms (netwatch) e trigger do rádio em 50 ms;
 // "Normal" = o que a bancada mediu em 16/10/2026.
@@ -19,6 +24,23 @@ const LIMITES: Record<'fibra' | 'radio', Limite[]> = {
 }
 
 const CRITICO = ['Desastre', 'Alta']
+
+/** Cartões da Visão. `total` ocupa a linha; `largo` e `estreito` dividem a linha na proporção do gráfico + lateral. */
+const CARTOES: Record<string, { nome: string; tamanho: 'total' | 'largo' | 'estreito' }> = {
+  contexto: { nome: 'Faixa do roteador', tamanho: 'total' },
+  latencia: { nome: 'Latência', tamanho: 'largo' },
+  alertas: { nome: 'Alertas', tamanho: 'estreito' },
+  chamados: { nome: 'Seus chamados', tamanho: 'estreito' },
+  trafego: { nome: 'Tráfego na Filial', tamanho: 'largo' },
+  caminho: { nome: 'Caminho ativo', tamanho: 'estreito' },
+}
+const LARGURA = { total: 'basis-full', largo: 'basis-[520px] grow-[10]', estreito: 'basis-[300px] grow' }
+
+/** Ordem salva na conta + cartões novos que ainda não estavam nela, só os que o papel pode ver. */
+function montar(painel: Painel | null, padrao: string[]): Painel {
+  const ordem = [...(painel?.ordem ?? []).filter(c => padrao.includes(c)), ...padrao.filter(c => !painel?.ordem.includes(c))]
+  return { ordem, ocultos: (painel?.ocultos ?? []).filter(c => padrao.includes(c)) }
+}
 
 /** Períodos prontos do relatório em PDF (segundos Unix). */
 function relatorios() {
@@ -49,15 +71,26 @@ export function curto(nome: string) {
   return nome.split(':')[0]
 }
 
+const itemMenu = 'flex h-8 cursor-default items-center rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta'
+
 export default function Visao() {
   const [horas, setHoras] = useState(24)
+  const [recorte, setRecorte] = useState<Recorte | null>(null) // zoom ou período personalizado
+  const [escolhendo, setEscolhendo] = useState(false)
   const [enlace, setEnlace] = useState<'fibra' | 'radio'>('fibra')
   const [comLimites, setComLimites] = useState(true)
-  const { pode } = useSessao()
+  const { pode, eu, recarregar } = useSessao()
   const interno = pode('alertas') // equipe do NOC; o cliente vê os próprios chamados no lugar dos alertas
+  const padrao = ['contexto', 'latencia', interno ? 'alertas' : 'chamados', 'trafego', 'caminho']
+  const [rascunho, setRascunho] = useState<Painel | null>(null) // != null = editando o painel
+  const [arrastando, setArrastando] = useState<string | null>(null)
+  const painel = rascunho ?? montar(eu?.painel ?? null, padrao)
+
+  const periodo = recorte ? `de=${recorte.de}&ate=${recorte.ate}` : `horas=${horas}`
+  const ao_vivo = recorte ? 0 : 60000
   const { dados: v } = useApi<TVisao>('/api/visao', 10000, ['visao'])
-  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?horas=${horas}`, 60000, ['visao'])
-  const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?horas=${horas}`, 60000)
+  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : ['visao'])
+  const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?${periodo}`, ao_vivo)
   const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 30000, ['alertas'])
   const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 60000, ['chamados'])
 
@@ -65,8 +98,9 @@ export default function Visao() {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([linhas.join('\n')], { type: 'text/csv' })), download: nome })
     a.click()
   }
-  const exportar = () => lat && baixar(`sennaguard-latencia-${horas}h.csv`,
+  const exportar = () => lat && baixar(`sennaguard-latencia-${recorte ? `${recorte.de}-${recorte.ate}` : `${horas}h`}.csv`,
     ['horario;latencia_fibra_ms;latencia_radio_ms', ...lat.map(p => `${new Date(p.t * 1000).toISOString()};${p.fibra ?? ''};${p.radio ?? ''}`)])
+  const zoom = (de: number, ate: number) => setRecorte({ de: Math.floor(de), ate: Math.ceil(ate) })
 
   const ultimo = lat?.length ? lat[lat.length - 1] : null
   const atual = ultimo?.[enlace] ?? null
@@ -75,74 +109,171 @@ export default function Visao() {
   const mbps = trafego?.length ? trafego[trafego.length - 1].mbps : null
   const media = trafego?.length ? trafego.reduce((s, p) => s + (p.mbps ?? 0), 0) / trafego.length : 0
 
+  const conteudo: Record<string, ReactNode> = {
+    contexto: v ? <Contexto v={v} interno={interno} /> : <Carregando />,
+    latencia: (
+      <Card className="h-full md:!px-9 md:!pt-7 !pb-5"
+        titulo={enlace === 'fibra' ? 'Latência da fibra' : 'Latência do rádio'}
+        extra={<Valor valor={atual == null ? 'sem resposta' : `${atual.toLocaleString('pt-BR')} ms`} erro={atual == null} cor={cor} quando={recorte ? undefined : ultimo?.t} />}
+        acao={<div className="flex gap-1.5">
+          <Chip ativo={enlace === 'fibra'} onClick={() => setEnlace('fibra')}>Fibra</Chip>
+          <Chip ativo={enlace === 'radio'} onClick={() => setEnlace('radio')}>Rádio</Chip>
+          <Chip ativo={comLimites} onClick={() => setComLimites(!comLimites)}><SlidersHorizontal />Limites</Chip>
+        </div>}>
+        {lat ? <Grafico dados={lat} serie={enlace} cor={cor} unidade="ms" altura={250} onZoom={zoom}
+          limites={comLimites ? LIMITES[enlace] : []}
+          faixas={faixasSemResposta(lat, enlace, enlace === 'fibra' ? 'Fibra fora' : 'Rádio fora')} />
+          : <div className="h-[250px]" />}
+      </Card>
+    ),
+    alertas: <CardAlertas alertas={alertas} baixar={baixar} />,
+    chamados: <CardChamados ch={ch} />,
+    trafego: (
+      <Card className="h-full md:!px-9 md:!pt-7 !pb-5" titulo="Tráfego na Filial"
+        extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} Mbps`} cor="var(--color-fibra)" quando={recorte ? undefined : trf?.[trf.length - 1]?.t} />}>
+        {trafego ? <Grafico dados={trafego} serie="mbps" cor="var(--color-fibra)" unidade="Mbps" altura={150} onZoom={zoom}
+          limites={comLimites && media ? [{ valor: Math.round(media), rotulo: 'Média', tipo: 'normal' }] : []} />
+          : <div className="h-[150px]" />}
+      </Card>
+    ),
+    caminho: lat && v ? <CardCaminho pontos={lat} v={v} alertas={alertas ?? []} /> : <Card className="h-full"><div className="h-[150px]" /></Card>,
+  }
+
+  const mover = (id: string, para: number) => {
+    if (!rascunho) return
+    const ordem = rascunho.ordem.filter(c => c !== id)
+    ordem.splice(Math.max(0, Math.min(para, ordem.length)), 0, id)
+    setRascunho({ ...rascunho, ordem })
+  }
+  const salvar = async () => {
+    if (rascunho) await api('/api/eu/painel', { method: 'PUT', body: JSON.stringify(rascunho) })
+    await recarregar(); setRascunho(null)
+  }
+  const restaurar = async () => { await api('/api/eu/painel', { method: 'DELETE' }); await recarregar(); setRascunho(null) }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2.5 text-[22px] font-medium tracking-[-0.02em] text-titulo">
           Enlaces<CaretRight size={18} weight="bold" className="text-titulo" />Matriz ⇄ Filial
         </h1>
-        <div className="flex gap-2.5">
-          <Menu.Root>
-            <Menu.Trigger asChild><Botao variante="contorno">{periodos.find(p => p.h === horas)?.r}<CaretDown weight="fill" /></Botao></Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Content align="end" sideOffset={6} className="z-50 min-w-44 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
-                {periodos.map(p => (
-                  <Menu.Item key={p.h} onSelect={() => setHoras(p.h)}
-                    className={`flex h-8 cursor-default items-center rounded-md px-2.5 outline-none data-[highlighted]:bg-white/5 ${p.h === horas ? 'text-fibra' : 'text-tinta-2'}`}>
-                    {p.r}
-                  </Menu.Item>
-                ))}
-              </Menu.Content>
-            </Menu.Portal>
-          </Menu.Root>
-          <Menu.Root>
-            <Menu.Trigger asChild><Botao><FileText />Exportar relatório</Botao></Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Content align="end" sideOffset={6} className="z-50 min-w-56 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
-                {pode('relatorios') && <>
-                  <div className="px-2.5 pb-1 pt-1.5 text-[11px] text-tinta-3">Relatório de SLA (PDF)</div>
-                  {relatorios().map(r => (
-                    <Menu.Item key={r.rotulo} onSelect={() => window.open(`${import.meta.env.BASE_URL}api/relatorio.pdf?de=${r.de}&ate=${r.ate}`)}
-                      className="flex h-8 cursor-default items-center rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">{r.rotulo}</Menu.Item>
+        {rascunho ? (
+          <div className="flex flex-wrap gap-2.5">
+            <Botao variante="contorno" onClick={restaurar}>Restaurar padrão</Botao>
+            <Botao onClick={() => setRascunho(null)}>Cancelar</Botao>
+            <Botao variante="primario" onClick={salvar}>Concluir</Botao>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2.5">
+            {recorte && <Botao variante="contorno" onClick={() => setRecorte(null)}><MagnifyingGlassMinus />Voltar para {periodos.find(p => p.h === horas)?.r.toLowerCase()}</Botao>}
+            <Menu.Root>
+              <Menu.Trigger asChild><Botao variante="contorno" data-tour="periodo">
+                {recorte ? <span className="num">{dataHora(recorte.de)} – {dataHora(recorte.ate)}</span> : periodos.find(p => p.h === horas)?.r}<CaretDown weight="fill" />
+              </Botao></Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Content align="end" sideOffset={6} className="z-50 min-w-48 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
+                  {periodos.map(p => (
+                    <Menu.Item key={p.h} onSelect={() => { setHoras(p.h); setRecorte(null) }}
+                      className={`${itemMenu} ${!recorte && p.h === horas ? '!text-fibra' : ''}`}>{p.r}</Menu.Item>
                   ))}
                   <div className="my-1 h-px bg-fio" />
-                </>}
-                <Menu.Item onSelect={exportar} className="flex h-8 cursor-default items-center rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta">Latência do período (CSV)</Menu.Item>
-              </Menu.Content>
-            </Menu.Portal>
-          </Menu.Root>
-        </div>
+                  <Menu.Item onSelect={() => setEscolhendo(true)} className={`${itemMenu} gap-2`}><CalendarBlank size={14} />Personalizado…</Menu.Item>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
+            <Menu.Root>
+              <Menu.Trigger asChild><Botao><FileText />Exportar relatório</Botao></Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Content align="end" sideOffset={6} className="z-50 min-w-56 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
+                  {pode('relatorios') && <>
+                    <div className="px-2.5 pb-1 pt-1.5 text-[11px] text-tinta-3">Relatório de SLA (PDF)</div>
+                    {relatorios().map(r => (
+                      <Menu.Item key={r.rotulo} onSelect={() => window.open(`${import.meta.env.BASE_URL}api/relatorio.pdf?de=${r.de}&ate=${r.ate}`)} className={itemMenu}>{r.rotulo}</Menu.Item>
+                    ))}
+                    <div className="my-1 h-px bg-fio" />
+                  </>}
+                  <Menu.Item onSelect={exportar} className={itemMenu}>Latência do período (CSV)</Menu.Item>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
+            <Botao variante="quieto" onClick={() => setRascunho(painel)} data-tour="editar-painel" aria-label="Editar painel" title="Editar painel"><SquaresFour weight="fill" /><span className="hidden sm:inline">Editar painel</span></Botao>
+          </div>
+        )}
       </div>
 
-      {v ? <Contexto v={v} interno={interno} /> : <Carregando />}
+      {rascunho && <p className="-mt-2 text-[12px] text-tinta-3">Arraste os cartões pela alça (ou use as setas) e toque no olho para esconder. Fica salvo na sua conta.</p>}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <Card className="md:!px-9 md:!pt-7 !pb-5"
-          titulo={enlace === 'fibra' ? 'Latência da fibra' : 'Latência do rádio'}
-          extra={<Valor valor={atual == null ? 'sem resposta' : `${atual.toLocaleString('pt-BR')} ms`} erro={atual == null} cor={cor} quando={ultimo?.t} />}
-          acao={<div className="flex gap-1.5">
-            <Chip ativo={enlace === 'fibra'} onClick={() => setEnlace('fibra')}>Fibra</Chip>
-            <Chip ativo={enlace === 'radio'} onClick={() => setEnlace('radio')}>Rádio</Chip>
-            <Chip ativo={comLimites} onClick={() => setComLimites(!comLimites)}><SlidersHorizontal />Limites</Chip>
-          </div>}>
-          {lat ? <Grafico dados={lat} serie={enlace} cor={cor} unidade="ms" altura={250}
-            limites={comLimites ? LIMITES[enlace] : []}
-            faixas={faixasSemResposta(lat, enlace, enlace === 'fibra' ? 'Fibra fora' : 'Rádio fora')} />
-            : <div className="h-[250px]" />}
-        </Card>
-
-        {interno ? <CardAlertas alertas={alertas} baixar={baixar} /> : <CardChamados ch={ch} />}
-
-        <Card className="md:!px-9 md:!pt-7 !pb-5" titulo="Tráfego na Filial"
-          extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} Mbps`} cor="var(--color-fibra)" quando={trf?.[trf.length - 1]?.t} />}>
-          {trafego ? <Grafico dados={trafego} serie="mbps" cor="var(--color-fibra)" unidade="Mbps" altura={150}
-            limites={comLimites && media ? [{ valor: Math.round(media), rotulo: 'Média', tipo: 'normal' }] : []} />
-            : <div className="h-[150px]" />}
-        </Card>
-
-        {lat && v ? <CardCaminho pontos={lat} v={v} alertas={alertas ?? []} /> : <Card><div className="h-[150px]" /></Card>}
+      <div className="flex flex-wrap gap-3">
+        {painel.ordem.filter(id => rascunho || !painel.ocultos.includes(id)).map((id, i) => {
+          const oculto = painel.ocultos.includes(id)
+          return (
+            <div key={id} data-tour={id} className={`relative min-w-0 ${LARGURA[CARTOES[id].tamanho]} ${rascunho && oculto ? 'opacity-35' : ''} ${arrastando === id ? 'opacity-50' : ''}`}
+              draggable={!!rascunho} onDragStart={e => { setArrastando(id); e.dataTransfer.effectAllowed = 'move' }} onDragEnd={() => setArrastando(null)}
+              onDragOver={e => { if (rascunho && arrastando) e.preventDefault() }}
+              onDrop={e => { e.preventDefault(); if (arrastando && arrastando !== id) mover(arrastando, rascunho!.ordem.indexOf(id)); setArrastando(null) }}>
+              {conteudo[id]}
+              {rascunho && (
+                <div className="absolute inset-0 z-10 flex items-start justify-between gap-2 rounded-xl bg-rack/40 p-2 outline-2 outline-dashed outline-fibra/50">
+                  <span className="flex cursor-grab items-center gap-1.5 rounded-md bg-painel-alto px-2 py-1 text-[12px] font-medium shadow active:cursor-grabbing">
+                    <DotsSixVertical size={16} weight="bold" />{CARTOES[id].nome}{oculto && <span className="text-tinta-3">· escondido</span>}
+                  </span>
+                  <span className="flex gap-1 rounded-md bg-painel-alto p-0.5 shadow">
+                    <BotaoIcone rotulo="Mover para antes" onClick={() => mover(id, i - 1)} desligado={i === 0}><ArrowUp /></BotaoIcone>
+                    <BotaoIcone rotulo="Mover para depois" onClick={() => mover(id, i + 1)} desligado={i === painel.ordem.length - 1}><ArrowDown /></BotaoIcone>
+                    <BotaoIcone rotulo={oculto ? 'Mostrar' : 'Esconder'} onClick={() => setRascunho({ ...rascunho, ocultos: oculto ? rascunho.ocultos.filter(c => c !== id) : [...rascunho.ocultos, id] })}>
+                      {oculto ? <EyeSlash /> : <Eye />}
+                    </BotaoIcone>
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {!rascunho && painel.ordem.every(id => painel.ocultos.includes(id)) && (
+          <p className="w-full rounded-xl border border-dashed border-fio py-10 text-center text-tinta-3">Todos os cartões estão escondidos. Use <b className="text-tinta-2">Editar painel</b> para mostrar.</p>
+        )}
       </div>
+
+      <Modal aberto={escolhendo} onClose={() => setEscolhendo(false)} titulo="Período personalizado" descricao="Até 31 dias. Dica: arrastar sobre o gráfico também dá zoom.">
+        <EscolherPeriodo inicial={recorte} onEscolher={r => { setRecorte(r); setEscolhendo(false) }} />
+      </Modal>
     </div>
+  )
+}
+
+function BotaoIcone({ rotulo, onClick, desligado = false, children }: { rotulo: string; onClick: () => void; desligado?: boolean; children: ReactNode }) {
+  return (
+    <button type="button" aria-label={rotulo} title={rotulo} onClick={onClick} disabled={desligado}
+      className="grid size-7 place-items-center rounded text-tinta-2 hover:bg-white/5 hover:text-tinta disabled:opacity-30 [&_svg]:size-4">{children}</button>
+  )
+}
+
+/** datetime-local trabalha em hora local sem fuso: converte nos dois sentidos. */
+const paraCampo = (t: number) => { const d = new Date(t * 1000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16) }
+
+function EscolherPeriodo({ inicial, onEscolher }: { inicial: Recorte | null; onEscolher: (r: Recorte) => void }) {
+  const agora = Math.floor(Date.now() / 1000)
+  const [de, setDe] = useState(paraCampo(inicial?.de ?? agora - 86400))
+  const [ate, setAte] = useState(paraCampo(inicial?.ate ?? agora))
+  const [erro, setErro] = useState('')
+  const campo = 'h-9 w-full rounded-lg border border-fio bg-fenda px-3 text-tinta focus:border-fibra/60 focus:outline-none'
+  const enviar = (e: FormEvent) => {
+    e.preventDefault()
+    const r = { de: Math.floor(new Date(de).getTime() / 1000), ate: Math.floor(new Date(ate).getTime() / 1000) }
+    if (!(r.ate > r.de)) return setErro('O fim precisa ser depois do início.')
+    if (r.ate - r.de > 31 * 86400) return setErro('O período pode ter no máximo 31 dias.')
+    if (r.de > agora) return setErro('O início não pode estar no futuro.')
+    onEscolher({ de: r.de, ate: Math.min(r.ate, agora) })
+  }
+  return (
+    <form onSubmit={enviar} className="flex flex-col gap-3.5">
+      <label className="flex flex-col gap-1.5 text-[12px] font-medium text-tinta-2">Início
+        <input type="datetime-local" required value={de} max={paraCampo(agora)} onChange={e => setDe(e.target.value)} className={campo} /></label>
+      <label className="flex flex-col gap-1.5 text-[12px] font-medium text-tinta-2">Fim
+        <input type="datetime-local" required value={ate} max={paraCampo(agora)} onChange={e => setAte(e.target.value)} className={campo} /></label>
+      {erro && <p className="text-[12px] text-desastre">{erro}</p>}
+      <Botao type="submit" variante="primario" className="self-end">Aplicar</Botao>
+    </form>
   )
 }
 
@@ -185,7 +316,7 @@ function CardAlertas({ alertas, baixar }: { alertas: Alerta[] | null; baixar: (n
   const destaque = lista.find(a => a.ativo && CRITICO.includes(a.severidade)) ?? lista.find(a => a.ativo)
   const criticos = alertas?.filter(a => CRITICO.includes(a.severidade)).length ?? 0
   return (
-    <Card titulo="Alertas" acao={
+    <Card className="h-full" titulo="Alertas" acao={
       <Chip onClick={() => alertas && baixar('sennaguard-alertas.csv', ['evento;severidade;problema;inicio;fim',
         ...alertas.map(a => `${a.id};${a.severidade};${a.nome};${dataHora(a.inicio)};${a.fim ? dataHora(a.fim) : 'ativo'}`)])}>
         <DownloadSimple />Baixar
@@ -219,7 +350,7 @@ function CardAlertas({ alertas, baixar }: { alertas: Alerta[] | null; baixar: (n
 
 function CardChamados({ ch }: { ch: ListaChamados | null }) {
   return (
-    <Card titulo="Seus chamados" acao={<Link to="/chamados?sg=novo"><Chip><Plus />Abrir</Chip></Link>}>
+    <Card className="h-full" titulo="Seus chamados" acao={<Link to="/chamados?sg=novo"><Chip><Plus />Abrir</Chip></Link>}>
       <ul className="flex flex-col gap-2">
         {ch?.manuais.slice(0, 5).map(c => (
           <li key={c.id}>
@@ -252,7 +383,7 @@ function CardCaminho({ pontos, v, alertas }: { pontos: Ponto[]; v: TVisao; alert
   const naFibra = v.caminho === 'fibra'
   const riscos = alertas.filter(a => a.inicio >= t0 && a.inicio <= t1)
   return (
-    <Card titulo="Caminho ativo" acao={<Link to="/equipamentos"><Chip><ArrowsOut />Detalhes</Chip></Link>}>
+    <Card className="h-full" titulo="Caminho ativo" acao={<Link to="/equipamentos"><Chip><ArrowsOut />Detalhes</Chip></Link>}>
       <div className="grid grid-cols-3 divide-x divide-fio-forte text-[11px] text-tinta-2">
         <div className="pr-3">
           Situação
@@ -270,7 +401,7 @@ function CardCaminho({ pontos, v, alertas }: { pontos: Ponto[]; v: TVisao; alert
         {quedas.map(f => <span key={f.ini} title={`Fibra fora: ${hora(f.ini)} às ${hora(f.fim)}`} className="absolute inset-y-0 min-w-[10px] rounded-[2px] bg-queda" style={{ left: x(f.ini), width: `calc(${x(f.fim)} - ${x(f.ini)})` }} />)}
       </div>
       <div className="num mt-2 flex justify-between border-t border-fio pt-1.5 text-[10.5px] text-tinta-3">
-        <span>{hora(t0)}</span><span>{hora((t0 + t1) / 2)}</span><span>{hora(t1)}</span>
+        {[t0, (t0 + t1) / 2, t1].map(t => <span key={t}>{t1 - t0 > 36 * 3600 ? dataHora(t) : hora(t)}</span>)}
       </div>
     </Card>
   )

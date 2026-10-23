@@ -35,8 +35,8 @@ export default function Chat() {
 
   return (
     <Dialog.Root open={aberto} onOpenChange={setAberto}>
-      <Dialog.Trigger aria-label="Pergunte ao NOC"
-        className="fixed bottom-5 right-5 z-30 flex h-12 items-center gap-2 rounded-full bg-fibra px-5 font-semibold text-white shadow-[0_8px_24px_rgb(111_90_224/0.35)] transition-transform duration-150 hover:bg-fibra-hover active:scale-[0.97]">
+      <Dialog.Trigger aria-label="Pergunte ao NOC" data-tour="chat"
+        className="fixed bottom-[calc(76px+env(safe-area-inset-bottom))] right-4 z-30 flex h-12 md:bottom-5 md:right-5 items-center gap-2 rounded-full bg-fibra px-5 font-semibold text-white shadow-[0_8px_24px_rgb(111_90_224/0.35)] transition-transform duration-150 hover:bg-fibra-hover active:scale-[0.97]">
         <ChatCircleDots size={20} weight="fill" /><span className="hidden sm:inline">Pergunte ao NOC</span>
       </Dialog.Trigger>
       <Dialog.Portal>

@@ -40,7 +40,13 @@ Cada passo entra num histórico encadeado por SHA-256, e a tela de Chamados acus
 | Chat | "Pergunte ao NOC": IA com ferramentas só de leitura; o cliente vê apenas o que é da Filial |
 | Teste de failover | pedido → aprovação do admin → fibra desligada 60 s no R-MATRIZ → laudo em PDF |
 | Base de conhecimento | chamado resolvido vira rascunho (IA), o analista publica; sugestões ao abrir chamado |
-| Tema | escuro (padrão) ou claro, no menu do usuário; funciona no celular |
+| Tema | escuro (padrão) ou claro, no menu do usuário |
+| Celular | barra inferior com os atalhos do papel + "Mais"; tabelas viram cartões |
+| Visão personalizável | cada pessoa arrasta e esconde os cartões; salvo na conta |
+| Período e zoom | 1 h a 30 dias ou intervalo livre; arrastar no gráfico dá zoom |
+| Conversa no chamado | anexos (imagem/PDF até 5 MB, Ctrl+V cola print), nota interna da equipe, "visto às" em tempo real |
+| Perfil | foto, troca de e-mail com senha, avisos do Telegram por tipo e severidade, não perturbe 22 h–7 h |
+| Tour | no 1º acesso (roteiro de cliente ou de equipe); refazer pelo menu |
 
 ## No servidor do NOC (Debian 12, junto do Zabbix)
 

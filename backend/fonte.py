@@ -53,11 +53,17 @@ def _lat_radio(t):
     return round(6.2 + 1.2 * math.sin(t / 3100) + 0.5 * math.sin(t / 900) + random.uniform(0, 0.15) + subida, 2)
 
 
-def _sim_serie(metrica, horas):
-    fim = _agora() - _agora() % 300
+def _passo(segundos):
+    """Resolução da série: 1 min para zoom curto, até 1 h para 30 dias (o trend do Zabbix é horário)."""
+    return 60 if segundos <= 3 * 3600 else 300 if segundos <= 24 * 3600 else 900 if segundos <= 72 * 3600 else 3600
+
+
+def _sim_serie(metrica, horas, ate=None):
+    passo = _passo(horas * 3600)
+    fim = (ate or _agora()) - (ate or _agora()) % passo
     pontos = []
     random.seed(metrica)
-    for t in range(fim - horas * 3600, fim + 1, 300):
+    for t in range(int(fim - horas * 3600), fim + 1, passo):
         if metrica == "latencia":
             pontos.append({"t": t, "fibra": _lat_fibra(t), "radio": _lat_radio(t)})
         elif metrica == "sinal":
@@ -149,12 +155,14 @@ def visao():
             "disponibilidade_24h": None, "snmp": {"disponivel": h.get("available") == "1"}}
 
 
-def serie(metrica, horas):
+def serie(metrica, horas, ate=None):
+    """Série de `horas` horas terminando em `ate` (agora, se omitido)."""
     if SIMULACAO:
-        return _sim_serie(metrica, horas)
+        return _sim_serie(metrica, horas, ate)
     h = call("host.get", {"filter": {"host": [HOST]}, "output": ["hostid"]})[0]
-    desde = _agora() - horas * 3600
-    passo = 300 if horas <= 24 else 3600
+    ate = ate or _agora()
+    desde = int(ate - horas * 3600)
+    passo = _passo(horas * 3600)
     baldes: dict[int, dict[str, list[float]]] = {}
 
     def item(**filtro):
@@ -176,10 +184,10 @@ def serie(metrica, horas):
         if not it:
             continue
         if horas > 72:
-            dados = call("trend.get", {"itemids": [it["itemid"]], "time_from": desde, "output": ["clock", "value_avg", "value_min"]})
+            dados = call("trend.get", {"itemids": [it["itemid"]], "time_from": desde, "time_till": ate, "output": ["clock", "value_avg", "value_min"]})
         else:
             dados = call("history.get", {"itemids": [it["itemid"]], "history": int(it["value_type"]), "time_from": desde,
-                                         "sortfield": "clock", "output": ["clock", "value"]})
+                                         "time_till": ate, "sortfield": "clock", "output": ["clock", "value"]})
         for p in dados:
             t = int(p["clock"]) - int(p["clock"]) % passo
             v = float(p.get("value", p.get("value_avg", 0)))

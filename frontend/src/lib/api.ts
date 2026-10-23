@@ -21,10 +21,18 @@ export type Chamado = {
 }
 export type Integridade = { ok: boolean; registros: number; quebra: number | null; motivo: string }
 export type Equipamento = { nome: string; tipo: string; ip: string; modelo: string; local: string; up: boolean; latencia: number | null; sinal?: number | null }
-export type Eu = { id: number; nome: string; email: string; papel: string; permissoes: string[]; modo: string; telegram: boolean; telegram_disponivel: boolean }
+export type Notificacoes = {
+  alertas: boolean; chamados_equipe: boolean; desastre: boolean; alta: boolean; media: boolean
+  caminho: boolean; chamados: boolean; manutencao: boolean; relatorio: boolean; silencio: boolean
+}
+export type Painel = { ordem: string[]; ocultos: string[] }
+export type Eu = {
+  id: number; nome: string; email: string; papel: string; permissoes: string[]; modo: string; telegram: boolean; telegram_disponivel: boolean
+  foto: number | null; tour_visto: boolean; painel: Painel | null; notificacoes: Notificacoes
+}
 export type Usuario = {
   id: number; nome: string; email: string; papel: string; ativo: number
-  alerta_email: number; chamado_email: number; criado_em: number; ultimo_acesso: number | null; telegram: number
+  alerta_email: number; chamado_email: number; criado_em: number; ultimo_acesso: number | null; telegram: number; foto_em: number | null
 }
 
 /** Chama a API sob o caminho da aplicação (/sennaguard/api/...). 401 avisa o app para voltar ao login. */
@@ -37,6 +45,14 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   }
   return r.status === 204 ? (undefined as T) : r.json()
 }
+
+/** Envia um arquivo cru no corpo (sem multipart): o servidor confere o tipo pelos primeiros bytes. */
+export function enviarArquivo<T>(url: string, arquivo: Blob, metodo = 'POST') {
+  return api<T>(url, { method: metodo, body: arquivo, headers: { 'Content-Type': arquivo.type || 'application/octet-stream' } })
+}
+
+export const urlFoto = (id: number, versao: number) => `${import.meta.env.BASE_URL}api/usuarios/${id}/foto?v=${versao}`
+export const urlAnexo = (id: number) => `${import.meta.env.BASE_URL}api/anexos/${id}`
 
 /** Tempo real: o servidor manda o nome do canal que mudou (visao, alertas, chamados…) e quem usa aquele canal recarrega. */
 let fonteEventos: EventSource | null = null
@@ -71,12 +87,17 @@ export function useApi<T>(url: string, intervalo = 0, canais: string[] = []) {
   return { dados, erro, recarregar: carregar }
 }
 
+export type Anexo = { id: number; nome: string; tipo: string; tamanho: number }
+export type Registro = {
+  seq: number; acao: string; autor_nome: string; autor_papel: string; texto: string; em: number; hash: string
+  anexos: Anexo[]; visto: { em: number; por: string } | null
+}
 export type ContextoEnlace = { caminho: 'fibra' | 'radio'; fibra_up: boolean; radio_up: boolean; fibra_ms: string; radio_ms: string }
 export type ChamadoManual = {
   id: number; numero: string; titulo: string; descricao: string; categoria: string; impacto: string
   status: 'aberto' | 'em_atendimento' | 'resolvido'; contexto: ContextoEnlace | null
   aberto_por: number; aberto_por_nome: string; responsavel_nome: string | null; criado_em: number; atualizado_em: number
   sla: { resposta: { prazo: number; em: number | null }; solucao: { prazo: number; em: number | null } }
-  registros?: { seq: number; acao: string; autor_nome: string; autor_papel: string; texto: string; em: number; hash: string }[]
+  registros?: Registro[]
 }
 export type ListaChamados = { chamados: Chamado[]; integridade: Integridade; manuais: ChamadoManual[]; integridade_manuais: Integridade }

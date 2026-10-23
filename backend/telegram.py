@@ -18,6 +18,9 @@ import auth
 from banco import coluna, db
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+# O que cada pessoa quer receber (perfil). "silencio" = não perturbe das 22 h às 7 h, menos Desastre.
+NOTIFICACOES = {"desastre": True, "alta": True, "media": True, "caminho": True, "chamados": True,
+                "manutencao": True, "relatorio": True, "silencio": False}
 log = logging.getLogger("sennaguard.telegram")
 router = APIRouter()
 _bot = {"nome": os.environ.get("TELEGRAM_BOT", ""), "offset": 0}
@@ -29,6 +32,7 @@ def ativo():
 
 def criar_tabelas(con):
     coluna(con, "usuarios", "telegram_chat_id", "text")
+    coluna(con, "usuarios", "notificacoes", "text")
     con.execute("create table if not exists telegram_codigos (codigo text primary key, usuario_id integer, expira integer)")
 
 
@@ -67,25 +71,42 @@ def enviar_documento(chat_id, nome, conteudo: bytes, legenda=""):
         log.warning("falha ao enviar documento para %s: %s", chat_id, e)
 
 
-def para_usuarios(ids, texto):
-    """Manda para os usuários indicados que têm Telegram ligado e acesso ativo."""
+def preferencias(guardado):
+    try:
+        return NOTIFICACOES | (json.loads(guardado) if guardado else {})
+    except ValueError:
+        return dict(NOTIFICACOES)
+
+
+def aceita(guardado, tipo=None, urgente=False):
+    """A pessoa quer este aviso agora? `tipo` é uma chave de NOTIFICACOES; urgente fura o não perturbe."""
+    p = preferencias(guardado)
+    if tipo and not p.get(tipo, True):
+        return False
+    hora = time.localtime().tm_hour
+    return urgente or not (p["silencio"] and (hora >= 22 or hora < 7))
+
+
+def para_usuarios(ids, texto, tipo=None, urgente=False):
+    """Manda para os usuários indicados que têm Telegram ligado, acesso ativo e querem esse tipo de aviso."""
     if not ativo() or not ids:
         return
     with db() as con:
-        chats = [r[0] for r in con.execute(
-            f"select telegram_chat_id from usuarios where ativo=1 and telegram_chat_id is not null and id in ({','.join('?' * len(ids))})", list(ids))]
-    for c in chats:
-        _em_segundo_plano(_enviar, c, texto)
+        linhas = con.execute(f"""select telegram_chat_id, notificacoes from usuarios
+                                 where ativo=1 and telegram_chat_id is not null and id in ({','.join('?' * len(ids))})""", list(ids)).fetchall()
+    for chat, prefs in linhas:
+        if aceita(prefs, tipo, urgente):
+            _em_segundo_plano(_enviar, chat, texto)
 
 
-def para_equipe(texto, preferencia="chamado_email", papeis=("Administrador", "Analista", "Operador")):
+def para_equipe(texto, preferencia="chamado_email", papeis=("Administrador", "Analista", "Operador"), tipo=None, urgente=False, exceto=None):
     """Manda para a equipe que marcou a preferência (alerta_email = alertas, chamado_email = chamados)."""
     if not ativo():
         return
     with db() as con:
         ids = [r[0] for r in con.execute(
-            f"select id from usuarios where {preferencia}=1 and papel in ({','.join('?' * len(papeis))})", list(papeis))]
-    para_usuarios(ids, texto)
+            f"select id from usuarios where {preferencia}=1 and papel in ({','.join('?' * len(papeis))})", list(papeis)) if r[0] != exceto]
+    para_usuarios(ids, texto, tipo, urgente)
 
 
 def ler_mensagens():

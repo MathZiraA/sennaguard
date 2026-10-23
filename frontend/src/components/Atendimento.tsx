@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Lightbulb } from '@phosphor-icons/react'
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from 'react'
+import { Checks, Check, Clock, FilePdf, LockSimple, Lightbulb, Paperclip, X } from '@phosphor-icons/react'
 import { CheckCircle2, Loader2, Send, Wrench } from 'lucide-react'
-import { Clock } from '@phosphor-icons/react'
-import { api, type ChamadoManual, type ContextoEnlace } from '../lib/api'
+import { api, enviarArquivo, urlAnexo, type Anexo, type ChamadoManual, type ContextoEnlace, type Registro } from '../lib/api'
 import { dataHora, desde, duracao } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
 import { Botao, Led } from './ui'
@@ -17,7 +16,7 @@ const STATUS: Record<string, { rotulo: string; cor: string }> = {
   resolvido: { rotulo: 'Resolvido', cor: 'var(--color-led)' },
 }
 const ACOES: Record<string, string> = {
-  abertura: 'abriu o chamado', comentario: 'comentou', em_atendimento: 'assumiu o atendimento',
+  abertura: 'abriu o chamado', comentario: 'comentou', nota: 'escreveu uma nota interna', em_atendimento: 'assumiu o atendimento',
   resolvido: 'marcou como resolvido', aberto: 'voltou para aberto', reaberto: 'reabriu ao responder',
 }
 
@@ -82,6 +81,77 @@ function Opcoes({ legenda, opcoes, valor, onChange, colunas }: { legenda: string
   )
 }
 
+const TIPOS = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf']
+const LIMITE = 5 * 1024 * 1024
+const tamanho = (b: number) => b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`
+
+/** Anexos de uma mensagem que ainda vai ser enviada: cada arquivo sobe na hora em que é escolhido (ou colado). */
+function useAnexos() {
+  const [lista, setLista] = useState<Anexo[]>([])
+  const [subindo, setSubindo] = useState(0)
+  const [erro, setErro] = useState('')
+  const adicionar = async (arquivos: File[]) => {
+    setErro('')
+    for (const f of arquivos) {
+      if (!TIPOS.includes(f.type)) { setErro(`"${f.name}": envie imagem (PNG, JPG, WEBP) ou PDF.`); continue }
+      if (f.size > LIMITE) { setErro(`"${f.name}" passa de 5 MB.`); continue }
+      if (lista.length + subindo >= 5) { setErro('No máximo 5 anexos por mensagem.'); break }
+      setSubindo(n => n + 1)
+      try {
+        const a = await enviarArquivo<Anexo>(`/api/anexos?nome=${encodeURIComponent(f.name || 'print.png')}`, f)
+        setLista(l => [...l, a])
+      } catch (e) { setErro((e as Error).message) } finally { setSubindo(n => n - 1) }
+    }
+  }
+  const colar = (e: ClipboardEvent) => {
+    const imgs = [...e.clipboardData.files].filter(f => f.type.startsWith('image/'))
+    if (imgs.length) { e.preventDefault(); adicionar(imgs) }
+  }
+  return { lista, subindo, erro, adicionar, colar, remover: (id: number) => setLista(l => l.filter(a => a.id !== id)), limpar: () => setLista([]) }
+}
+
+function EscolherAnexos({ an }: { an: ReturnType<typeof useAnexos> }) {
+  const entrada = useRef<HTMLInputElement>(null)
+  return (
+    <div className="flex flex-col gap-2">
+      {(an.lista.length > 0 || an.subindo > 0) && (
+        <ul className="flex flex-wrap gap-2">
+          {an.lista.map(a => (
+            <li key={a.id} className="flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg border border-fio bg-painel-alto pl-2.5 pr-1 text-[12px]">
+              {a.tipo === 'application/pdf' ? <FilePdf size={14} weight="fill" className="shrink-0 text-desastre" /> : <Paperclip size={14} className="shrink-0 text-tinta-3" />}
+              <span className="truncate">{a.nome}</span>
+              <button type="button" onClick={() => an.remover(a.id)} aria-label={`Tirar ${a.nome}`} className="grid size-6 shrink-0 place-items-center rounded text-tinta-3 hover:text-tinta"><X size={12} weight="bold" /></button>
+            </li>
+          ))}
+          {an.subindo > 0 && <li className="flex h-8 items-center gap-1.5 px-2 text-[12px] text-tinta-3"><Loader2 className="size-3.5 animate-spin" />enviando…</li>}
+        </ul>
+      )}
+      {an.erro && <p className="text-[12px] text-desastre">{an.erro}</p>}
+      <input ref={entrada} type="file" multiple accept={TIPOS.join(',')} className="sr-only" tabIndex={-1}
+        onChange={e => { an.adicionar([...(e.target.files ?? [])]); e.target.value = '' }} />
+      <button type="button" onClick={() => entrada.current?.click()} className="flex items-center gap-1.5 self-start text-[12px] font-medium text-tinta-2 hover:text-tinta">
+        <Paperclip size={15} />Anexar print, foto ou PDF <span className="font-normal text-tinta-4">· até 5 MB · Ctrl+V cola um print</span>
+      </button>
+    </div>
+  )
+}
+
+/** Anexos de uma mensagem já enviada: imagens em miniatura (abrem em outra aba), PDF como etiqueta para baixar. */
+function Anexos({ lista }: { lista: Anexo[] }) {
+  if (!lista.length) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {lista.map(a => a.tipo.startsWith('image/')
+        ? <a key={a.id} href={urlAnexo(a.id)} target="_blank" rel="noreferrer" title={a.nome} className="block overflow-hidden rounded-lg ring-1 ring-fio-forte transition-opacity hover:opacity-85">
+            <img src={urlAnexo(a.id)} alt={a.nome} loading="lazy" className="h-20 w-28 object-cover" />
+          </a>
+        : <a key={a.id} href={urlAnexo(a.id)} className="flex h-9 max-w-[240px] items-center gap-2 rounded-lg border border-fio bg-painel-alto px-3 text-[12px] hover:border-fio-forte">
+            <FilePdf size={16} weight="fill" className="shrink-0 text-desastre" /><span className="truncate">{a.nome}</span><span className="shrink-0 text-tinta-4">{tamanho(a.tamanho)}</span>
+          </a>)}
+    </div>
+  )
+}
+
 /** Formulário de abertura: o estado do enlace é anexado pelo servidor, o cliente só descreve o problema. */
 export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoManual) => void; onCancelar: () => void }) {
   const [f, setF] = useState({ titulo: '', descricao: '', categoria: 'sem_acesso', impacto: 'um_pc' })
@@ -96,9 +166,10 @@ export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoMan
     return () => clearTimeout(t)
   }, [f.titulo, f.descricao])
   const [enviando, setEnviando] = useState(false)
+  const an = useAnexos()
   const enviar = async (e: FormEvent) => {
     e.preventDefault(); setErro(''); setEnviando(true)
-    try { onCriado(await api<ChamadoManual>('/api/chamados', { method: 'POST', body: JSON.stringify(f) })) }
+    try { onCriado(await api<ChamadoManual>('/api/chamados', { method: 'POST', body: JSON.stringify({ ...f, anexos: an.lista.map(a => a.id) }) })) }
     catch (x) { setErro((x as Error).message) } finally { setEnviando(false) }
   }
   return (
@@ -110,9 +181,10 @@ export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoMan
           placeholder="Ex.: Sem internet no setor financeiro" className={`${campo} h-9`} />
       </label>
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-tinta-2">Descrição
-        <textarea required minLength={10} maxLength={4000} rows={4} value={f.descricao} onChange={e => setF({ ...f, descricao: e.target.value })}
+        <textarea required minLength={10} maxLength={4000} rows={4} value={f.descricao} onChange={e => setF({ ...f, descricao: e.target.value })} onPaste={an.colar}
           placeholder="Desde quando, quais computadores, o que aparece na tela…" className={`${campo} resize-none py-2`} />
       </label>
+      <EscolherAnexos an={an} />
       {sugestoes.length > 0 && (
         <div className="rounded-xl border border-fibra/30 bg-fibra/[0.07] px-4 py-3">
           <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-tinta"><Lightbulb size={15} weight="fill" className="text-fibra" />Isso pode resolver antes de abrir o chamado</div>
@@ -130,7 +202,7 @@ export function NovoChamado({ onCriado, onCancelar }: { onCriado: (c: ChamadoMan
       {erro && <p className="text-[12px] text-desastre">{erro}</p>}
       <div className="flex justify-end gap-2 border-t border-fio pt-4">
         <Botao type="button" onClick={onCancelar}>Cancelar</Botao>
-        <Botao type="submit" variante="primario" disabled={enviando}><Send />{enviando ? 'Abrindo…' : 'Abrir chamado'}</Botao>
+        <Botao type="submit" variante="primario" disabled={enviando || an.subindo > 0}><Send />{enviando ? 'Abrindo…' : 'Abrir chamado'}</Botao>
       </div>
     </form>
   )
@@ -154,18 +226,74 @@ function Foto({ c }: { c: ContextoEnlace }) {
   )
 }
 
+/** Linha de um evento (assumiu, resolveu, reabriu): pequena e centralizada, para não competir com a conversa. */
+function Evento({ r }: { r: Registro }) {
+  return (
+    <li className="flex items-center gap-3 text-[11.5px] text-tinta-3">
+      <span className="h-px flex-1 bg-fio" />
+      <span><b className="font-medium text-tinta-2">{r.autor_nome}</b> {ACOES[r.acao] ?? r.acao} · {dataHora(r.em)}</span>
+      <span className="h-px flex-1 bg-fio" />
+    </li>
+  )
+}
+
+/** Mensagem da conversa. As minhas ficam à direita; nota interna em âmbar, só para a equipe. */
+function Mensagem({ r, minha, descricao }: { r: Registro; minha: boolean; descricao: string }) {
+  const nota = r.acao === 'nota'
+  const daEquipe = r.autor_papel !== 'Cliente'
+  const texto = r.acao === 'abertura' ? descricao : r.texto // a abertura guarda título + descrição; o título já está no topo
+  return (
+    <li className={`flex flex-col ${minha ? 'items-end' : 'items-start'}`}>
+      <div className="mb-1 flex items-center gap-1.5 text-[11.5px] text-tinta-3">
+        {nota && <LockSimple size={12} weight="fill" className="text-media" />}
+        <b className="font-semibold text-tinta-2">{r.autor_nome}</b>
+        <span>{nota ? 'nota interna' : r.acao === 'abertura' ? 'abriu o chamado' : daEquipe ? 'NOC' : 'Filial'} · {dataHora(r.em)}</span>
+      </div>
+      <div className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 leading-relaxed ${nota ? 'border border-dashed border-media/50 bg-media/10'
+        : minha ? 'rounded-tr-md bg-fibra/15' : 'rounded-tl-md bg-painel-alto'}`}>
+        {texto && <p className="whitespace-pre-wrap text-tinta">{texto}</p>}
+        <Anexos lista={r.anexos} />
+      </div>
+      {minha && !nota && (
+        <div className="mt-1 flex items-center gap-1 text-[10.5px] text-tinta-4" title={r.visto ? `Visto por ${r.visto.por}` : undefined}>
+          {r.visto ? <><Checks size={13} weight="bold" className="text-fibra" />Visto {daEquipe ? 'pelo cliente' : 'pelo NOC'} às {dataHora(r.visto.em).split(' ')[1]}</> : <><Check size={13} weight="bold" />Enviado</>}
+        </div>
+      )}
+    </li>
+  )
+}
+
 export function DetalheChamado({ id, onMudou }: { id: number; onMudou: () => void }) {
   const { pode, eu } = useSessao()
   const [c, setC] = useState<ChamadoManual | null>(null)
   const [texto, setTexto] = useState('')
+  const [interno, setInterno] = useState(false)
   const [ocupado, setOcupado] = useState(false)
-  useEffect(() => { api<ChamadoManual>(`/api/chamados/manuais/${id}`).then(setC) }, [id])
+  const [erro, setErro] = useState('')
+  const an = useAnexos()
+  const fim = useRef<HTMLDivElement>(null)
+  // Recarrega quando o outro lado responde ou lê (tempo real pelo canal "chamados")
+  useEffect(() => {
+    const carregar = () => api<ChamadoManual>(`/api/chamados/manuais/${id}`).then(setC).catch(() => {})
+    carregar()
+    window.addEventListener('sg:chamados', carregar)
+    return () => window.removeEventListener('sg:chamados', carregar)
+  }, [id])
+  const mensagens = c?.registros?.filter(r => ['abertura', 'comentario', 'nota'].includes(r.acao)).length ?? 0
+  useEffect(() => { fim.current?.scrollIntoView({ block: 'nearest' }) }, [mensagens])
 
   const agir = async (url: string, corpo: object) => {
-    setOcupado(true)
-    try { setC(await api<ChamadoManual>(url, { method: 'POST', body: JSON.stringify(corpo) })); onMudou() } finally { setOcupado(false) }
+    setOcupado(true); setErro('')
+    try { setC(await api<ChamadoManual>(url, { method: 'POST', body: JSON.stringify(corpo) })); onMudou(); return true }
+    catch (e) { setErro((e as Error).message); return false } finally { setOcupado(false) }
+  }
+  const responder = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!texto.trim() && !an.lista.length) return
+    if (await agir(`/api/chamados/manuais/${id}/comentario`, { texto, interno, anexos: an.lista.map(a => a.id) })) { setTexto(''); an.limpar() }
   }
   if (!c) return <div className="grid h-40 place-items-center text-tinta-3"><Loader2 className="size-5 animate-spin" /></div>
+  const cliente = eu?.papel === 'Cliente'
 
   return (
     <div className="flex flex-col gap-6">
@@ -181,42 +309,57 @@ export function DetalheChamado({ id, onMudou }: { id: number; onMudou: () => voi
         <BarraSla rotulo="Solução" inicio={c.criado_em} prazo={c.sla.solucao.prazo} em={c.sla.solucao.em} />
       </div>
 
-      <p className="whitespace-pre-wrap leading-relaxed text-tinta-2">{c.descricao}</p>
       {c.contexto && <Foto c={c.contexto} />}
 
       {pode('atender_chamado') && c.status !== 'resolvido' && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {c.status === 'aberto' && <Botao variante="primario" disabled={ocupado} onClick={() => agir(`/api/chamados/manuais/${c.id}/status`, { status: 'em_atendimento' })}><Wrench />Assumir atendimento</Botao>}
           <Botao disabled={ocupado} onClick={() => agir(`/api/chamados/manuais/${c.id}/status`, { status: 'resolvido' })}><CheckCircle2 />Marcar como resolvido</Botao>
         </div>
       )}
 
       <section>
-        <h3 className="mb-3 text-[13px] font-semibold">Histórico</h3>
-        <ol className="relative flex flex-col gap-4 border-l border-fio pl-5">
-          {c.registros?.map(r => {
-            const daEquipe = r.autor_papel !== 'Cliente'
-            return (
-              <li key={r.seq} className="relative">
-                <span className="absolute -left-[25px] top-1.5 size-2 rounded-full ring-4 ring-painel" style={{ background: daEquipe ? 'var(--color-fibra)' : 'var(--color-media)' }} />
-                <div className="text-[12px]">
-                  <b className="font-semibold text-tinta">{r.autor_nome}</b> <span className="text-tinta-3">{ACOES[r.acao] ?? r.acao} · {dataHora(r.em)}</span>
-                </div>
-                {r.acao === 'comentario' && <p className="mt-1.5 whitespace-pre-wrap rounded-lg bg-painel-alto px-3 py-2 leading-relaxed text-tinta-2">{r.texto}</p>}
-                <div className="mt-1 truncate font-mono text-[10px] text-tinta-4" title={r.hash}>#{r.seq} · sha256 {r.hash.slice(0, 24)}…</div>
-              </li>
-            )
-          })}
+        <h3 className="mb-3 text-[13px] font-semibold">Conversa</h3>
+        <ol className="flex flex-col gap-4">
+          {c.registros?.map(r => ['abertura', 'comentario', 'nota'].includes(r.acao)
+            ? <Mensagem key={r.seq} r={r} descricao={c.descricao} minha={r.autor_nome === eu?.nome && (r.autor_papel === 'Cliente') === cliente} />
+            : <Evento key={r.seq} r={r} />)}
         </ol>
+        <div ref={fim} />
       </section>
 
-      <form onSubmit={e => { e.preventDefault(); if (texto.trim()) agir(`/api/chamados/manuais/${c.id}/comentario`, { texto }).then(() => setTexto('')) }} className="flex flex-col gap-2">
-        <label htmlFor="resp" className="text-[13px] font-semibold">{eu?.papel === 'Cliente' ? 'Responder ao NOC' : 'Responder ao cliente'}</label>
-        <textarea id="resp" rows={3} value={texto} onChange={e => setTexto(e.target.value)} maxLength={4000}
-          placeholder={c.status === 'resolvido' && eu?.papel === 'Cliente' ? 'Se o problema voltou, conte aqui: o chamado é reaberto.' : 'Escreva uma mensagem…'}
+      <form onSubmit={responder} className={`flex flex-col gap-2.5 rounded-xl border p-3 ${interno ? 'border-dashed border-media/50 bg-media/[0.06]' : 'border-fio'}`}>
+        {!cliente && (
+          <div className="flex gap-1 text-[12px]">
+            {[{ v: false, r: 'Responder ao cliente' }, { v: true, r: 'Nota interna' }].map(o => (
+              <button key={o.r} type="button" aria-pressed={interno === o.v} onClick={() => setInterno(o.v)}
+                className={`flex h-7 items-center gap-1.5 rounded-md px-2.5 font-medium transition-colors ${interno === o.v ? (o.v ? 'bg-media/20 text-tinta' : 'bg-painel-alto text-tinta') : 'text-tinta-3 hover:text-tinta-2'}`}>
+                {o.v && <LockSimple size={12} weight="fill" />}{o.r}
+              </button>
+            ))}
+          </div>
+        )}
+        <label htmlFor="resp" className="sr-only">{cliente ? 'Responder ao NOC' : interno ? 'Nota interna' : 'Responder ao cliente'}</label>
+        <textarea id="resp" rows={3} value={texto} onChange={e => setTexto(e.target.value)} onPaste={an.colar} maxLength={4000}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) responder(e) }}
+          placeholder={interno ? 'Só a equipe vê. O cliente não é avisado.' : c.status === 'resolvido' && cliente ? 'Se o problema voltou, conte aqui: o chamado é reaberto.' : 'Escreva uma mensagem…'}
           className={`${campo} resize-none py-2`} />
-        <div className="flex justify-end"><Botao type="submit" variante="primario" disabled={ocupado || !texto.trim()}><Send />Enviar</Botao></div>
+        <EscolherAnexos an={an} />
+        {erro && <p className="text-[12px] text-desastre">{erro}</p>}
+        <div className="flex items-center justify-between gap-2">
+          <span className="hidden text-[11px] text-tinta-4 sm:inline">Ctrl+Enter envia</span>
+          <Botao type="submit" variante="primario" className="ml-auto" disabled={ocupado || an.subindo > 0 || (!texto.trim() && !an.lista.length)}>
+            {interno ? <LockSimple weight="fill" /> : <Send />}{interno ? 'Salvar nota' : 'Enviar'}
+          </Botao>
+        </div>
       </form>
+
+      <details className="text-[11px] text-tinta-4">
+        <summary className="cursor-pointer select-none text-center">Registro encadeado (SHA-256) · {c.registros?.length} entradas</summary>
+        <ol className="mt-2 flex flex-col gap-1 font-mono text-[10px]">
+          {c.registros?.map(r => <li key={r.seq} className="truncate" title={r.hash}>#{r.seq} {r.acao} · {r.hash.slice(0, 32)}…</li>)}
+        </ol>
+      </details>
       <p className="text-center text-[11px] text-tinta-4">Aberto por {c.aberto_por_nome} há {desde(c.criado_em)}</p>
     </div>
   )

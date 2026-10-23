@@ -7,6 +7,7 @@ type Sessao = {
   entrar: (email: string, senha: string) => Promise<void>
   sair: () => Promise<void>
   pode: (permissao: string) => boolean
+  recarregar: () => Promise<void>
 }
 
 const Ctx = createContext<Sessao>(null!)
@@ -31,6 +32,7 @@ export function ProvedorSessao({ children }: { children: ReactNode }) {
     setEu(null)
   }, [])
   const pode = useCallback((p: string) => !!eu?.permissoes.includes(p), [eu])
+  const recarregar = useCallback(async () => { setEu(await api<Eu>('/api/eu')) }, [])
 
-  return <Ctx.Provider value={{ eu, carregando, entrar, sair, pode }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ eu, carregando, entrar, sair, pode, recarregar }}>{children}</Ctx.Provider>
 }

@@ -14,6 +14,7 @@ import Alertas from './pages/Alertas'
 import Chamados from './pages/Chamados'
 import Equipamentos from './pages/Equipamentos'
 import Usuarios from './pages/Usuarios'
+import Perfil from './pages/Perfil'
 import '@fontsource-variable/inter'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
@@ -44,6 +45,7 @@ function App() {
         <Route path="testes" element={<Exige permissao="testes"><Testes /></Exige>} />
         <Route path="backups" element={<Exige permissao="backups"><Backups /></Exige>} />
         <Route path="conhecimento" element={<Exige permissao="conhecimento"><Conhecimento /></Exige>} />
+        <Route path="perfil" element={<Perfil />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -16,11 +16,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
 import agenda
+import anexos
 import atendimento
 import backup
 import chat
 import conhecimento
 import manutencao
+import perfil
 import relatorio
 import auth
 import fonte
@@ -37,7 +39,7 @@ SENHA_DEMO = "senai2026"  # só no modo simulação
 
 app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
 for r in (tempo_real.router, telegram.router, tv.router, relatorio.router, manutencao.router,
-          backup.router, chat.router, conhecimento.router, teste.router):
+          backup.router, chat.router, conhecimento.router, teste.router, anexos.router, perfil.router):
     app.include_router(r)
 
 
@@ -52,6 +54,8 @@ def iniciar():
             con.execute("alter table usuarios add column senha_hash text")
         con.execute("create table if not exists sessoes (token_hash text primary key, usuario_id integer, expira integer, ip text)")
         atendimento.criar_tabelas(con)
+        anexos.criar_tabelas(con)
+        perfil.criar_tabelas(con)
         telegram.criar_tabelas(con)
         tv.criar_tabelas(con)
         manutencao.criar_tabelas(con)
@@ -91,7 +95,7 @@ class Login(BaseModel):
 def _publico(u):
     return {k: u[k] for k in ("id", "nome", "email", "papel")} | {
         "permissoes": sorted(auth.PERMISSOES[u["papel"]]), "modo": "simulação" if fonte.SIMULACAO else "zabbix",
-        "telegram": bool(u.get("telegram_chat_id")), "telegram_disponivel": telegram.ativo()}
+        "telegram": bool(u.get("telegram_chat_id")), "telegram_disponivel": telegram.ativo()} | perfil.do_usuario(u)
 
 
 @app.post("/api/login")
@@ -154,8 +158,14 @@ def visao(_=auth.exigir("visao")):
 
 
 @app.get("/api/serie/{metrica}")
-def serie(metrica: Literal["latencia", "trafego", "sinal"], horas: int = 24, _=auth.exigir("visao")):
-    return fonte.serie(metrica, min(horas, 744))
+def serie(metrica: Literal["latencia", "trafego", "sinal"], horas: float = 24, de: int | None = None, ate: int | None = None,
+          _=auth.exigir("visao")):
+    """Últimas `horas` horas, ou o intervalo `de`–`ate` (segundos Unix) do período personalizado e do zoom."""
+    if de is not None and ate is not None:
+        if not 0 < ate - de <= 31 * 86400:
+            raise HTTPException(422, "Período inválido (de 1 minuto a 31 dias).")
+        return fonte.serie(metrica, max(ate - de, 60) / 3600, min(ate, int(time.time())))
+    return fonte.serie(metrica, min(max(horas, 1 / 60), 744))
 
 
 JANELA_INCIDENTE = 60  # mesma janela do Analista IA: eventos do mesmo host em 60 s viram um incidente
@@ -229,6 +239,7 @@ class NovoChamado(BaseModel):
     descricao: str = Field(min_length=10, max_length=4000)
     categoria: Literal[atendimento.CATEGORIAS]
     impacto: Literal[atendimento.IMPACTOS]
+    anexos: list[int] = Field(default_factory=list, max_length=anexos.POR_MENSAGEM)
 
 
 @app.post("/api/chamados", status_code=201)
@@ -241,10 +252,11 @@ def abrir_chamado(c: NovoChamado, u=auth.exigir("abrir_chamado")):
         agora = int(time.time())
         cid = con.execute("""insert into chamados_manuais (titulo,descricao,categoria,impacto,contexto,aberto_por,criado_em,atualizado_em)
                              values (?,?,?,?,?,?,?,?)""", (c.titulo, c.descricao, c.categoria, c.impacto, contexto, u["id"], agora, agora)).lastrowid
-        atendimento.registrar(con, cid, "abertura", u, f"{c.titulo}\n\n{c.descricao}")
+        atendimento.registrar(con, cid, "abertura", u, f"{c.titulo}\n\n{c.descricao}", anexos.prender(con, c.anexos, u, cid))
         novo = atendimento.detalhe(con, cid, u)
     tempo_real.avisar("chamados")
-    telegram.para_equipe(f"🆕 <b>Chamado SG-{cid}</b> · {atendimento.IMPACTOS_NOME[c.impacto]}\n{c.titulo}\n<i>Aberto por {u['nome']}</i>")
+    telegram.para_equipe(f"🆕 <b>Chamado SG-{cid}</b> · {atendimento.IMPACTOS_NOME[c.impacto]}\n{c.titulo}{_clipe(c.anexos)}\n<i>Aberto por {u['nome']}</i>",
+                         tipo="chamados", exceto=u["id"])
     return novo
 
 
@@ -255,33 +267,56 @@ def _chamado_ou_404(con, cid, u):
     return c
 
 
+def _clipe(ids):
+    return f"\n📎 {len(ids)} anexo{'s' if len(ids) > 1 else ''}" if ids else ""
+
+
 @app.get("/api/chamados/manuais/{cid}")
 def ver_chamado(cid: int, u=auth.exigir("chamados")):
     with db() as con:
-        return _chamado_ou_404(con, cid, u)
+        _chamado_ou_404(con, cid, u)
+        leu = atendimento.marcar_visto(con, cid, u)
+        c = atendimento.detalhe(con, cid, u)
+    if leu:
+        tempo_real.avisar("chamados")  # o outro lado vê o "visto às" na hora
+    return c
 
 
 class Comentario(BaseModel):
-    texto: str = Field(min_length=1, max_length=4000)
+    texto: str = Field("", max_length=4000)
+    interno: bool = False  # nota interna: só a equipe vê
+    anexos: list[int] = Field(default_factory=list, max_length=anexos.POR_MENSAGEM)
 
 
 @app.post("/api/chamados/manuais/{cid}/comentario")
 def comentar(cid: int, c: Comentario, u=auth.exigir("chamados")):
+    if not c.texto.strip() and not c.anexos:
+        raise HTTPException(422, "Escreva uma mensagem ou anexe um arquivo.")
+    if c.interno and u["papel"] == "Cliente":
+        raise HTTPException(403, "Notas internas são só da equipe.")
     with db() as con:
         ch = _chamado_ou_404(con, cid, u)
-        atendimento.registrar(con, cid, "comentario", u, c.texto)
+        atendimento.registrar(con, cid, "nota" if c.interno else "comentario", u, c.texto, anexos.prender(con, c.anexos, u, cid))
         if ch["status"] == "resolvido" and u["papel"] == "Cliente":  # cliente respondendo reabre
             con.execute("update chamados_manuais set status='aberto' where id=?", (cid,))
             atendimento.registrar(con, cid, "reaberto", u)
+        atendimento.marcar_visto(con, cid, u)  # quem escreve já leu tudo até aqui
         novo = atendimento.detalhe(con, cid, u)
     tempo_real.avisar("chamados")
-    aviso = f"💬 <b>SG-{cid}</b> · {u['nome']} respondeu\n{c.texto[:400]}"
+    if c.interno:
+        aviso = f"📝 <b>SG-{cid}</b> · nota interna de {u['nome']}\n{c.texto[:400]}{_clipe(c.anexos)}"
+        if ch.get("responsavel") and ch["responsavel"] != u["id"]:
+            telegram.para_usuarios([ch["responsavel"]], aviso, tipo="chamados")
+        elif not ch.get("responsavel"):
+            telegram.para_equipe(aviso, tipo="chamados", exceto=u["id"])
+        return novo
+    aviso = f"💬 <b>SG-{cid}</b> · {u['nome']} respondeu\n{c.texto[:400]}{_clipe(c.anexos)}"
     if u["papel"] != "Cliente":
-        telegram.para_usuarios([ch["aberto_por"]], aviso)
+        telegram.para_usuarios([ch["aberto_por"]], aviso, tipo="chamados")
     elif ch.get("responsavel"):
-        telegram.para_usuarios([ch["responsavel"]], aviso)
+        telegram.para_usuarios([ch["responsavel"]], aviso, tipo="chamados")
     else:
-        telegram.para_equipe(aviso)
+        telegram.para_equipe(aviso, tipo="chamados")
     return novo
 
 
@@ -299,7 +334,7 @@ def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
             texto = {"em_atendimento": f"🔧 <b>SG-{cid}</b> está em atendimento com {u['nome']}.",
                      "resolvido": f"✅ <b>SG-{cid}</b> foi resolvido por {u['nome']}. Se o problema voltar, é só responder no painel.",
                      "aberto": f"↩️ <b>SG-{cid}</b> voltou para aberto."}[m.status]
-            telegram.para_usuarios([ch["aberto_por"]], texto)
+            telegram.para_usuarios([ch["aberto_por"]], texto, tipo="chamados")
             if m.status == "resolvido":
                 conhecimento.rascunhar_de_chamado(cid)  # vira rascunho na base de conhecimento
         novo = atendimento.detalhe(con, cid, u)
@@ -331,7 +366,7 @@ class Usuario(BaseModel):
     senha: str | None = Field(None, min_length=8, max_length=128)  # obrigatória ao criar; ao editar, só se for trocar
 
 
-CAMPOS = "id,nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,telegram_chat_id is not null as telegram"
+CAMPOS = "id,nome,email,papel,ativo,alerta_email,chamado_email,criado_em,ultimo_acesso,foto_em,telegram_chat_id is not null as telegram"
 
 
 def _admins_ativos(con, exceto):

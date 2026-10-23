@@ -208,7 +208,8 @@ def relatorio_mensal():
         if con.execute("select 1 from marcas where chave=?", (chave,)).fetchone():
             return
         con.execute("insert into marcas values (?,?)", (chave, int(time.time())))
-        admins = [r[0] for r in con.execute("select telegram_chat_id from usuarios where papel='Administrador' and ativo=1 and telegram_chat_id is not null")]
+        admins = [r[0] for r in con.execute("select telegram_chat_id, notificacoes from usuarios where papel='Administrador' and ativo=1 and telegram_chat_id is not null")
+                  if telegram.aceita(r[1], "relatorio", urgente=True)]
     de, ate = _mes_anterior(agora)
     pdf = gerar_pdf(metricas(de, ate))
     for chat in admins:

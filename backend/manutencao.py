@@ -75,7 +75,7 @@ def agendar(m: NovaManutencao, u=auth.exigir("manutencao")):
                           (m.titulo, m.descricao, m.inicio, m.fim, u["nome"], int(time.time()), zid)).lastrowid
     tempo_real.avisar("manutencao")
     telegram.para_usuarios(_todos_com_telegram(), f"🛠 <b>Manutenção programada</b>\n{m.titulo}\n{_hm(m.inicio)} até {_hm(m.fim)}"
-                           + (f"\n{m.descricao}" if m.descricao else ""))
+                           + (f"\n{m.descricao}" if m.descricao else ""), tipo="manutencao")
     return {"id": mid}
 
 
@@ -89,7 +89,7 @@ def cancelar(mid: int, _=auth.exigir("manutencao")):
     if r["zabbix_id"] and not fonte.SIMULACAO:
         fonte.call("maintenance.delete", [r["zabbix_id"]])
     tempo_real.avisar("manutencao")
-    telegram.para_usuarios(_todos_com_telegram(), f"✖️ Manutenção cancelada: {r['titulo']} ({_hm(r['inicio'])})")
+    telegram.para_usuarios(_todos_com_telegram(), f"✖️ Manutenção cancelada: {r['titulo']} ({_hm(r['inicio'])})", tipo="manutencao")
 
 
 @agenda.tarefa(60)
@@ -101,5 +101,5 @@ def avisar_uma_hora_antes():
         for p in proximas:
             con.execute("update manutencoes set avisado_1h=1 where id=?", (p["id"],))
     for p in proximas:
-        telegram.para_usuarios(_todos_com_telegram(), f"⏰ Em 1 hora: manutenção <b>{p['titulo']}</b>, das {_hm(p['inicio'])} às {_hm(p['fim'])}.")
+        telegram.para_usuarios(_todos_com_telegram(), f"⏰ Em 1 hora: manutenção <b>{p['titulo']}</b>, das {_hm(p['inicio'])} às {_hm(p['fim'])}.", tipo="manutencao")
     tempo_real.avisar("manutencao")  # a faixa do painel muda sozinha quando a janela começa ou termina

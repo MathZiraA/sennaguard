@@ -46,7 +46,8 @@ def iniciar():
 
 
 # ---------------------------------------------------------------- vigias de sempre
-_estado = {"visao": None, "alertas": None}
+_estado = {"visao": None, "alertas": None, "caminho": None}
+TIPO_ALERTA = {5: "desastre", 4: "alta", 3: "media"}
 
 
 @tarefa(5)
@@ -56,6 +57,11 @@ def vigiar_enlace():
     if assinatura != _estado["visao"]:
         _estado["visao"] = assinatura
         tempo_real.avisar("visao")
+    antes, _estado["caminho"] = _estado["caminho"], v["caminho"]
+    if antes and antes != v["caminho"] and not silenciado():
+        texto = ("📡 A Filial passou para o <b>rádio</b>: a fibra parou de responder." if v["caminho"] == "radio"
+                 else "🟢 A Filial voltou para a <b>fibra</b>.")
+        telegram.para_equipe(texto, preferencia="alerta_email", tipo="caminho")
 
 
 @tarefa(15)
@@ -72,7 +78,8 @@ def vigiar_alertas():
         a = ativos[eid]
         if a["nivel"] >= 3:  # Média ou mais grave
             icone = "🔴" if a["nivel"] >= 4 else "🟣"
-            telegram.para_equipe(f"{icone} <b>{a['severidade']}</b> · {a['host']}\n{a['nome']}", preferencia="alerta_email")
+            telegram.para_equipe(f"{icone} <b>{a['severidade']}</b> · {a['host']}\n{a['nome']}", preferencia="alerta_email",
+                                 tipo=TIPO_ALERTA[min(a["nivel"], 5)], urgente=a["nivel"] >= 5)
 
 
 @tarefa(3)

@@ -3,8 +3,9 @@ import { BellRing, Check, Copy, Mail, Pencil, Plus, Trash2, Tv } from 'lucide-re
 import { TelegramLogo } from '@phosphor-icons/react'
 import { api, useApi, type Usuario } from '../lib/api'
 import { desde } from '../lib/fmt'
+import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
-import { Botao, Card, Carregando } from '../components/ui'
+import { Botao, Card, Carregando, Chave } from '../components/ui'
 
 const PAPEIS: Record<string, string> = {
   Administrador: 'Configura o NOC e gerencia usuários',
@@ -15,7 +16,7 @@ const PAPEIS: Record<string, string> = {
 const corPapel: Record<string, string> = {
   Administrador: 'var(--color-fibra)', Analista: 'var(--color-radio)', Operador: 'var(--color-tinta-2)', Cliente: 'var(--color-media)',
 }
-type Form = Omit<Usuario, 'id' | 'criado_em' | 'ultimo_acesso' | 'telegram'> & { senha?: string }
+type Form = Omit<Usuario, 'id' | 'criado_em' | 'ultimo_acesso' | 'telegram' | 'foto_em'> & { senha?: string }
 const vazio: Form = { nome: '', email: '', papel: 'Operador', ativo: 1, alerta_email: 1, chamado_email: 0, senha: '' }
 
 export default function Usuarios() {
@@ -61,7 +62,26 @@ export default function Usuarios() {
         ))}
       </div>
 
-      <Card className="!p-0 overflow-x-auto">
+      {/* Celular: um cartão por pessoa */}
+      <ul className="flex flex-col gap-2 md:hidden">
+        {dados.map(u => (
+          <li key={u.id} className={`flex items-center gap-3 rounded-xl border border-fio bg-painel px-4 py-3 ${u.ativo ? '' : 'opacity-50'}`}>
+            <Avatar id={u.id} nome={u.nome} foto={u.foto_em} cor={corPapel[u.papel]} tamanho={38} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{u.nome}{!u.ativo && <span className="ml-2 text-[11px] text-tinta-3">desativado</span>}</div>
+              <div className="truncate text-[11px] text-tinta-3">{u.email}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px]">
+                <span className="font-medium" style={{ color: corPapel[u.papel] }}>{u.papel}</span>
+                <span className="text-tinta-3">· {u.ultimo_acesso ? `entrou há ${desde(u.ultimo_acesso)}` : 'nunca entrou'}</span>
+                {!!u.telegram && <TelegramLogo size={13} weight="fill" className="text-[#2aabee]" />}
+              </div>
+            </div>
+            <button onClick={() => abrir(u)} aria-label={`Editar ${u.nome}`} className="grid size-9 place-items-center rounded-lg text-tinta-3 hover:bg-painel-alto hover:text-tinta"><Pencil className="size-4" /></button>
+          </li>
+        ))}
+      </ul>
+
+      <Card className="!p-0 hidden overflow-x-auto md:block">
         <table className="w-full min-w-[760px] text-left">
           <thead className="text-[11px] text-tinta-3">
             <tr className="border-b border-fio">
@@ -74,10 +94,7 @@ export default function Usuarios() {
               <tr key={u.id} className={`group border-b border-fio last:border-0 ${u.ativo ? '' : 'opacity-50'}`}>
                 <td className="py-3 pl-5">
                   <div className="flex items-center gap-3">
-                    <div className="grid size-8 place-items-center rounded-full text-[11px] font-semibold"
-                      style={{ color: corPapel[u.papel], background: `color-mix(in srgb, ${corPapel[u.papel]} 14%, transparent)` }}>
-                      {u.nome.split(/[\s-]/).map(p => p[0]).slice(0, 2).join('').toUpperCase()}
-                    </div>
+                    <Avatar id={u.id} nome={u.nome} foto={u.foto_em} cor={corPapel[u.papel]} />
                     <div><div className="font-medium">{u.nome}{!u.ativo && <span className="ml-2 text-[11px] text-tinta-3">desativado</span>}</div><div className="text-[11px] text-tinta-3">{u.email}</div></div>
                   </div>
                 </td>
@@ -147,19 +164,6 @@ const campo = 'h-9 w-full rounded-lg border border-fio bg-fenda px-3 text-tinta 
 
 function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return <label className="flex flex-col gap-1.5 text-[12px] font-medium text-tinta-2">{rotulo}{children}</label>
-}
-
-function Chave({ rotulo, ligado, onChange }: { rotulo: string; ligado: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 text-tinta-2">
-      {rotulo}
-      <span className="relative">
-        <input type="checkbox" role="switch" checked={ligado} onChange={e => onChange(e.target.checked)} className="peer sr-only" />
-        <span className="block h-5 w-9 rounded-full bg-painel-alto ring-1 ring-fio-forte transition-colors peer-checked:bg-fibra peer-focus-visible:outline-2 peer-focus-visible:outline-fibra" />
-        <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-tinta transition-transform duration-150 peer-checked:translate-x-4" />
-      </span>
-    </label>
-  )
 }
 
 /** Links fixos da TV do NOC: o link aparece uma vez só, ao ser criado; revogar derruba a tela na hora. */

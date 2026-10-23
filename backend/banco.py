@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 
 BANCO = Path(os.environ.get("SENNAGUARD_BANCO", Path(__file__).parent / "dados" / "sennaguard.db"))
+# Fotos de perfil e anexos dos chamados (no servidor: /var/lib/sennaguard/arquivos, dentro do backup diário)
+ARQUIVOS = Path(os.environ.get("SENNAGUARD_ARQUIVOS", BANCO.parent / "arquivos"))
 
 
 def db():
