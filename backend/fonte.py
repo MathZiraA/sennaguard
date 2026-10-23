@@ -328,8 +328,10 @@ def equipamentos():
                      sinal=None if e["nome"] in fora else e.get("sinal")) for e in _SIM_EQUIP]
     hosts = call("host.get", {"output": ["hostid", "host", "status"], "selectInterfaces": ["ip"],
                               "selectInventory": ["model", "location"]})
-    com_problema = {h["hostid"] for p in call("problem.get", {"output": ["eventid"], "selectHosts": ["hostid"]})
-                    for h in p.get("hosts", [])}
+    # problem.get do Zabbix 7.0 não aceita selectHosts: os hosts vêm das triggers em estado de problema
+    com_problema = {h["hostid"] for t in call("trigger.get", {"output": ["triggerid"], "filter": {"value": 1},
+                                                              "monitored": True, "selectHosts": ["hostid"]})
+                    for h in t.get("hosts", [])}
     return [{"nome": h["host"], "tipo": _tipo(h["host"]), "ip": h["interfaces"][0]["ip"] if h.get("interfaces") else "",
              "modelo": (h.get("inventory") or {}).get("model", ""),
              "local": (h.get("inventory") or {}).get("location") or ("Filial" if "FILIAL" in h["host"].upper() else "Matriz"),
