@@ -48,6 +48,10 @@ Cada passo entra num histórico encadeado por SHA-256, e a tela de Chamados acus
 | Perfil | foto, troca de e-mail com senha, avisos do Telegram por tipo e severidade, não perturbe 22 h–7 h |
 | Tour | no 1º acesso (roteiro de cliente ou de equipe); refazer pelo menu |
 
+## Instalação
+
+Passo a passo completo para **Linux** (servidor do NOC ou teste local) e **Windows**: [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
+
 ## No servidor do NOC (Debian 12, junto do Zabbix)
 
 ```bash
