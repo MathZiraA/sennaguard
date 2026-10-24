@@ -173,14 +173,16 @@ Os comandos abaixo são para o **PowerShell**. Não precisa ser administrador, e
    .venv\Scripts\python -m pip install -r backend\requirements.txt
    ```
 
-   Chamar `.venv\Scripts\python` direto dispensa o `Activate.ps1`, que costuma ser bloqueado pela política de execução do PowerShell.
+   Chamar `.venv\Scripts\python` direto dispensa o `Activate.ps1`, que costuma ser bloqueado pela política de execução do PowerShell. Pelo mesmo motivo, os passos usam `npm.cmd` e `npx.cmd` em vez de `npm` e `npx`.
+
+   > No **Prompt de Comando** (cmd) também funciona: troque `cd` por `cd /d` e pode usar `npm`/`npx` normalmente.
 
 4. Instale e compile a interface:
 
    ```powershell
    cd frontend
-   npm ci
-   npm run build
+   npm.cmd ci
+   npm.cmd run build
    cd ..
    ```
 
@@ -195,18 +197,18 @@ Os comandos abaixo são para o **PowerShell**. Não precisa ser administrador, e
 
    ```powershell
    cd $HOME\Documents\sennaguard\frontend
-   npx vite preview
+   npx.cmd vite preview
    ```
 
 7. Abra **http://localhost:4173/sennaguard/** e entre com um usuário de demonstração. Use `localhost`, não `127.0.0.1`: no Windows o Vite escuta só no endereço IPv6 (`::1`).
 
-Para desenvolver, troque os passos 5 e 6 por `..\.venv\Scripts\python -m uvicorn main:app --reload --port 8000` e `npm run dev`, e abra `http://localhost:5173/sennaguard/`.
+Para desenvolver, troque os passos 5 e 6 por `..\.venv\Scripts\python -m uvicorn main:app --reload --port 8000` e `npm.cmd run dev`, e abra `http://localhost:5173/sennaguard/`.
 
 Para parar, aperte `Ctrl+C` nas duas janelas.
 
 ### Abrir em outro PC da rede (opcional)
 
-1. Suba a interface com `npx vite preview --host`.
+1. Suba a interface com `npx.cmd vite preview --host`.
 2. Libere a porta no firewall (PowerShell como administrador):
 
    ```powershell
@@ -271,6 +273,8 @@ O **backup dos roteadores** e o **teste de failover** usam chaves SSH dos MikroT
 | `http://127.0.0.1:4173` não abre no Windows | use `http://localhost:4173/sennaguard/` |
 | Abrir `http://localhost:4173/` dá tela em branco | falta o `/sennaguard/` no fim do endereço |
 | `Activate.ps1 não pode ser carregado` | não precisa ativar: use `.venv\Scripts\python ...` como nos passos |
+| `npm.ps1 não pode ser carregado` (PowerShell) | use `npm.cmd` e `npx.cmd`, ou rode no Prompt de Comando |
+| `cd /d` dá erro de "parâmetro posicional" | `/d` é do Prompt de Comando; no PowerShell use só `cd` |
 | No servidor: `Clone o repositório em /opt/sennaguard` | o instalador só roda a partir de `/opt/sennaguard` |
 | No servidor: `O serviço não respondeu` | veja `journalctl -u sennaguard -n 50` |
 | Esqueceu a senha do administrador (servidor) | `cd /opt/sennaguard/backend && sudo -u sennaguard env $(cat /etc/sennaguard/sennaguard.env \| xargs) ../.venv/bin/python gerenciar.py redefinir-senha --email x@y` |
