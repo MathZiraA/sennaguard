@@ -10,7 +10,10 @@ import { StatusChamado } from '../components/Atendimento'
 import Modal from '../components/Modal'
 import { Botao, Card, Carregando, Chip } from '../components/ui'
 
+// 5 e 15 min: 1 ponto por segundo (sonda do servidor), para demonstrar queda e volta ao vivo
+const CURTO = 0.25
 const periodos = [
+  { h: 5 / 60, r: 'Últimos 5 minutos' }, { h: CURTO, r: 'Últimos 15 minutos' },
   { h: 1, r: 'Última hora' }, { h: 6, r: 'Últimas 6 horas' }, { h: 24, r: 'Últimas 24 horas' },
   { h: 168, r: 'Últimos 7 dias' }, { h: 720, r: 'Últimos 30 dias' },
 ]
@@ -87,8 +90,10 @@ export default function Visao() {
   const painel = rascunho ?? montar(eu?.painel ?? null, padrao)
 
   const periodo = recorte ? `de=${recorte.de}&ate=${recorte.ate}` : `horas=${horas}`
-  const ao_vivo = recorte ? 0 : 10000 // mesmo ritmo do /api/visao: o Zabbix coleta a latência a cada 10 s
-  const { dados: v } = useApi<TVisao>('/api/visao', 10000, ['visao'])
+  const curto = !recorte && horas <= CURTO
+  // Períodos curtos: gráfico a cada 1 s; nos demais, 10 s. Queda e volta chegam na hora pelo canal "visao".
+  const ao_vivo = recorte ? 0 : curto ? 1000 : 10000
+  const { dados: v } = useApi<TVisao>('/api/visao', curto ? 2000 : 10000, ['visao'])
   const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : ['visao'])
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?${periodo}`, ao_vivo)
   const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 10000, ['alertas'])

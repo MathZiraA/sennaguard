@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
 import agenda
+import sonda
 import anexos
 import atendimento
 import backup
@@ -83,6 +84,8 @@ def iniciar():
     if fonte.SIMULACAO:
         livro.semear_exemplo()
         backup.semear_simulacao()
+    else:
+        sonda.iniciar(fonte.FIBRA_IP, fonte.RADIO_IP)
     agenda.iniciar()
 
 

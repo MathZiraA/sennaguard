@@ -10,6 +10,8 @@ import random
 import time
 import urllib.request
 
+import sonda
+
 URL = os.environ.get("ZABBIX_URL", "")
 TOKEN = os.environ.get("ZABBIX_TOKEN", "")
 HOST = os.environ.get("NOC_HOST", "R-FILIAL")
@@ -55,6 +57,8 @@ def _lat_radio(t):
 
 def _passo(segundos):
     """Resolução da série: 1 min para zoom curto, até 1 h para 30 dias (o trend do Zabbix é horário)."""
+    if segundos <= 1800:  # 5 e 15 min: a coleta do Zabbix é de 5 s
+        return 5
     return 60 if segundos <= 3 * 3600 else 300 if segundos <= 24 * 3600 else 900 if segundos <= 72 * 3600 else 3600
 
 
@@ -141,6 +145,12 @@ def visao():
                 "perda": float(perda["lastvalue"]) if perda else None}
 
     fibra, radio = enlace(FIBRA_IP), enlace(RADIO_IP)
+    ao_vivo = sonda.ativa()
+    if ao_vivo:  # a sonda de 1 s manda no estado; o Zabbix (5 s) fica para perda, sinal e histórico
+        for nome, d in (("fibra", fibra), ("radio", radio)):
+            s = sonda.ESTADO[nome]
+            d["up"] = s["up"]
+            d["latencia"] = (s["latencia"] if s["latencia"] is not None else d["latencia"]) if s["up"] else None
     fibra.update(porta="sfp1", custo=10, ip=FIBRA_IP)
     sinal = _item_sinal(ANTENA_FILIAL)
     radio["sinal"] = round(float(sinal["lastvalue"]), 1) if sinal and sinal.get("lastvalue") not in ("", None) and radio["up"] else None
@@ -148,6 +158,8 @@ def visao():
     # Item calculado do noc-senai-tcc: fibra*2 + rádio -> 3/2 = FIBRA, 1 = RÁDIO, 0 = ISOLADA
     valor = caminho[0]["lastvalue"] if caminho and caminho[0]["lastvalue"] not in ("", None) else None
     via = ("fibra" if int(float(valor)) >= 2 else "radio") if valor is not None else ("fibra" if fibra["up"] else "radio")
+    if ao_vivo:
+        via = "fibra" if fibra["up"] else "radio"
     falhou = fail and fail[0]["lastclock"] not in ("0", "", None)
     return {"modo": "zabbix", "host": HOST, "atualizado": _agora(), "caminho": via,
             "enlaces": {"fibra": fibra, "radio": radio},
@@ -159,6 +171,17 @@ def serie(metrica, horas, ate=None):
     """Série de `horas` horas terminando em `ate` (agora, se omitido)."""
     if SIMULACAO:
         return _sim_serie(metrica, horas, ate)
+    pontos = _serie_zabbix(metrica, horas, ate)
+    if metrica == "latencia" and horas <= 0.5 and sonda.ativa():
+        # Períodos curtos: 1 ponto por segundo da sonda; o Zabbix só cobre o trecho de antes de ela começar
+        fim = ate or _agora()
+        vivos = sonda.serie(int(fim - horas * 3600), fim)
+        if vivos:
+            pontos = [p for p in pontos if p["t"] < vivos[0]["t"]] + vivos
+    return pontos
+
+
+def _serie_zabbix(metrica, horas, ate=None):
     h = call("host.get", {"filter": {"host": [HOST]}, "output": ["hostid"]})[0]
     ate = ate or _agora()
     desde = int(ate - horas * 3600)

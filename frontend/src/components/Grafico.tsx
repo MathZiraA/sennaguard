@@ -35,8 +35,10 @@ export default function Grafico({ dados, serie, cor, unidade, limites = [], faix
   const t0 = dados[0]?.t ?? 0, t1 = dados[dados.length - 1]?.t ?? 1
   const ultima = faixas[faixas.length - 1]
   // Marcas redondas no eixo (10:15, 4:00, 12/10…), no máximo 7, alinhadas ao fuso local
-  const passo = [5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440, 2880, 5760, 10080].map(m => m * 60).find(p => (t1 - t0) / p <= 7) ?? 10080 * 60
-  const rotuloEixo = passo >= 86400 ? (t: number) => new Date(t * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : horaCurta
+  // 30 s a 2 min para os períodos curtos da demonstração (5 e 15 min)
+  const passo = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720, 1440, 2880, 5760, 10080].map(m => m * 60).find(p => (t1 - t0) / p <= 7) ?? 10080 * 60
+  const rotuloEixo = passo >= 86400 ? (t: number) => new Date(t * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    : passo < 60 ? (t: number) => new Date(t * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : horaCurta
   const fuso = new Date().getTimezoneOffset() * 60
   const marcas: number[] = []
   for (let t = Math.ceil((t0 - fuso) / passo) * passo + fuso; t <= t1; t += passo) marcas.push(t)
@@ -60,7 +62,7 @@ export default function Grafico({ dados, serie, cor, unidade, limites = [], faix
           onMouseUp={sel ? () => {
             const [a, b] = [Math.min(...sel), Math.max(...sel)]
             setSel(null)
-            if (b - a >= Math.max(300, (t1 - t0) / 100)) onZoom?.(a, b) // ignora clique e arrasto minúsculo
+            if (b - a >= Math.max(30, (t1 - t0) / 100)) onZoom?.(a, b) // ignora clique e arrasto minúsculo
           } : undefined}
           onMouseLeave={() => setSel(null)}>
           <defs>

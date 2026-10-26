@@ -17,7 +17,7 @@ export default function Tv() {
   useEffect(() => {
     const carregar = () => api<DadosTv>(`/api/tv?k=${encodeURIComponent(k)}`).then(r => { setD(r); setErro('') }).catch(e => setErro(e.message))
     carregar()
-    const a = setInterval(carregar, 10000), b = setInterval(() => setAgora(new Date()), 1000)
+    const a = setInterval(carregar, 2000), b = setInterval(() => setAgora(new Date()), 1000)
     return () => { clearInterval(a); clearInterval(b) }
   }, [k])
 

@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 conf() { grep -E "^\s*$1\s*=" "$NOC_CONF" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' " || true; }
 
 echo "==> 1/7 Pacotes"
-apt-get install -y -qq python3-venv curl >/dev/null
+apt-get install -y -qq python3-venv curl iputils-ping >/dev/null
 if ! node -v 2>/dev/null | grep -qE '^v(2[0-9]|[3-9][0-9])'; then
     # Tailwind 4 pede Node 20+; o Debian 12 traz o 18
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
