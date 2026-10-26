@@ -9,6 +9,13 @@ type Msg = { papel: 'usuario' | 'ia'; texto: string; erro?: boolean }
 const SUGESTOES_EQUIPE = ['Quanto tempo ficamos no rádio esta semana?', 'Quais alertas estão ativos agora?', 'Algum chamado perto de estourar o SLA?']
 const SUGESTOES_CLIENTE = ['A internet da Filial está normal agora?', 'Tem alguma manutenção programada?', 'Como está o meu chamado?']
 
+/** A IA responde em Markdown simples: mostra **negrito** e "* item" como texto formatado, sem os asteriscos. */
+function TextoIa({ texto }: { texto: string }) {
+  const linhas = texto.replace(/^#{1,6}\s*/gm, '').replace(/^(\s*)[*-]\s+/gm, '$1• ')
+  return <>{linhas.split(/(\*\*[^*]+\*\*)/g).map((parte, i) =>
+    parte.startsWith('**') && parte.endsWith('**') ? <b key={i} className="font-semibold">{parte.slice(2, -2)}</b> : parte)}</>
+}
+
 /** Botão flutuante "Pergunte ao NOC": conversa com a IA usando os dados do Zabbix e do SennaGuard. */
 export default function Chat() {
   const { eu } = useSessao()
@@ -67,7 +74,7 @@ export default function Chat() {
             {msgs.map((m, i) => (
               <div key={i} className={`flex ${m.papel === 'usuario' ? 'justify-end' : ''}`}>
                 <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 leading-relaxed ${m.papel === 'usuario' ? 'rounded-br-md bg-fibra text-white' : m.erro ? 'rounded-bl-md bg-desastre/10 text-desastre' : 'rounded-bl-md bg-painel-alto text-tinta'}`}>
-                  {m.texto}
+                  {m.papel === 'ia' ? <TextoIa texto={m.texto} /> : m.texto}
                 </div>
               </div>
             ))}
