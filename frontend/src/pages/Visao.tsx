@@ -130,9 +130,9 @@ export default function Visao() {
     chamados: <CardChamados ch={ch} />,
     trafego: (
       <Card className="h-full md:!px-9 md:!pt-7 !pb-5" titulo="Tráfego na Filial"
-        extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} Mbps`} cor="var(--color-fibra)" quando={recorte ? undefined : trf?.[trf.length - 1]?.t} />}>
+        extra={<Valor valor={mbps == null ? '—' : `${mbps.toLocaleString('pt-BR', { maximumFractionDigits: mbps < 10 ? 2 : 0 })} Mbps`} cor="var(--color-fibra)" quando={recorte ? undefined : trf?.[trf.length - 1]?.t} />}>
         {trafego ? <Grafico dados={trafego} serie="mbps" cor="var(--color-fibra)" unidade="Mbps" altura={150} onZoom={zoom}
-          limites={comLimites && media ? [{ valor: Math.round(media), rotulo: 'Média', tipo: 'normal' }] : []} />
+          limites={comLimites && media ? [{ valor: Math.round(media * 100) / 100, rotulo: 'Média', tipo: 'normal' }] : []} />
           : <div className="h-[150px]" />}
       </Card>
     ),
