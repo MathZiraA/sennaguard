@@ -247,7 +247,9 @@ def _item_sinal(host):
     h = call("host.get", {"filter": {"host": [host]}, "output": ["hostid"]})
     if not h:
         return None
-    r = call("item.get", {"hostids": h[0]["hostid"], "search": {"name": "signal"}, "output": ["itemid", "value_type", "name", "lastvalue"]})
+    campos = {"hostids": h[0]["hostid"], "output": ["itemid", "value_type", "name", "lastvalue"]}
+    # Primeiro o item do noc-senai-tcc (ubnt.sinal, "Rádio - sinal recebido", SNMP v1), depois o do template Ubiquiti
+    r = call("item.get", {**campos, "filter": {"key_": ["ubnt.sinal"]}}) or call("item.get", {**campos, "search": {"name": "signal"}})
     return next((i for i in r if "noise" not in i["name"].lower()), None)
 
 
