@@ -289,7 +289,7 @@ export function DetalheChamado({ id, onMudou }: { id: number; onMudou: () => voi
   }
   const responder = async (e: FormEvent) => {
     e.preventDefault()
-    if (!texto.trim() && !an.lista.length) return
+    if (ocupado || an.subindo > 0 || (!texto.trim() && !an.lista.length)) return // mesma trava do botão Enviar
     if (await agir(`/api/chamados/manuais/${id}/comentario`, { texto, interno, anexos: an.lista.map(a => a.id) })) { setTexto(''); an.limpar() }
   }
   if (!c) return <div className="grid h-40 place-items-center text-tinta-3"><Loader2 className="size-5 animate-spin" /></div>
@@ -341,13 +341,14 @@ export function DetalheChamado({ id, onMudou }: { id: number; onMudou: () => voi
         )}
         <label htmlFor="resp" className="sr-only">{cliente ? 'Responder ao NOC' : interno ? 'Nota interna' : 'Responder ao cliente'}</label>
         <textarea id="resp" rows={3} value={texto} onChange={e => setTexto(e.target.value)} onPaste={an.colar} maxLength={4000}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) responder(e) }}
+          // Enter envia, Shift+Enter pula linha (isComposing: não envia no meio de um acento sendo digitado)
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); responder(e) } }}
           placeholder={interno ? 'Só a equipe vê. O cliente não é avisado.' : c.status === 'resolvido' && cliente ? 'Se o problema voltou, conte aqui: o chamado é reaberto.' : 'Escreva uma mensagem…'}
           className={`${campo} resize-none py-2`} />
         <EscolherAnexos an={an} />
         {erro && <p className="text-[12px] text-desastre">{erro}</p>}
         <div className="flex items-center justify-between gap-2">
-          <span className="hidden text-[11px] text-tinta-4 sm:inline">Ctrl+Enter envia</span>
+          <span className="hidden text-[11px] text-tinta-4 sm:inline">Enter envia · Shift+Enter pula linha</span>
           <Botao type="submit" variante="primario" className="ml-auto" disabled={ocupado || an.subindo > 0 || (!texto.trim() && !an.lista.length)}>
             {interno ? <LockSimple weight="fill" /> : <Send />}{interno ? 'Salvar nota' : 'Enviar'}
           </Botao>
