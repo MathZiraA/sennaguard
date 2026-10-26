@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import * as Menu from '@radix-ui/react-dropdown-menu'
-import { ArrowDown, ArrowsOut, ArrowUp, CalendarBlank, CaretDown, CaretRight, CellSignalFull, CellSignalX, Cpu, DotsSixVertical, DownloadSimple, Eye, EyeSlash, FileText, LinkBreak, LinkSimple, MagnifyingGlassMinus, Plus, SlidersHorizontal, SquaresFour } from '@phosphor-icons/react'
+import { ArrowDown, ArrowsClockwise, ArrowsOut, ArrowUp, CalendarBlank, CaretDown, CaretRight, CellSignalFull, CellSignalX, Cpu, DotsSixVertical, DownloadSimple, Eye, EyeSlash, FileText, LinkBreak, LinkSimple, MagnifyingGlassMinus, Plus, SlidersHorizontal, SquaresFour } from '@phosphor-icons/react'
 import { api, useApi, type Alerta, type ListaChamados, type Painel, type Ponto, type Visao as TVisao } from '../lib/api'
 import { dataHora, desde, duracao, hora } from '../lib/fmt'
 import { useSessao } from '../lib/sessao'
@@ -10,14 +10,26 @@ import { StatusChamado } from '../components/Atendimento'
 import Modal from '../components/Modal'
 import { Botao, Card, Carregando, Chip } from '../components/ui'
 
-// 5 e 15 min: 1 ponto por segundo (sonda do servidor), para demonstrar queda e volta ao vivo
-const CURTO = 0.25
+// Até 30 min: 1 ponto por segundo (sonda do servidor), para demonstrar queda e volta ao vivo
+const CURTO = 0.5
 const periodos = [
-  { h: 5 / 60, r: 'Últimos 5 minutos' }, { h: CURTO, r: 'Últimos 15 minutos' },
+  { h: 5 / 60, r: 'Últimos 5 minutos' }, { h: 10 / 60, r: 'Últimos 10 minutos' }, { h: CURTO, r: 'Últimos 30 minutos' },
   { h: 1, r: 'Última hora' }, { h: 6, r: 'Últimas 6 horas' }, { h: 24, r: 'Últimas 24 horas' },
   { h: 168, r: 'Últimos 7 dias' }, { h: 720, r: 'Últimos 30 dias' },
 ]
 type Recorte = { de: number; ate: number }
+
+// "Atualizar a cada", como no Grafana. Automático = 1 s nos períodos curtos, 10 s nos demais, e na hora quando
+// um enlace cai ou volta. Qualquer outro valor é seguido à risca: a tela só recarrega naquele ritmo.
+const AUTOMATICO = -1
+const ritmos = [
+  { ms: AUTOMATICO, r: 'Automático' }, { ms: 0, r: 'Desligado' }, { ms: 1000, r: '1 s' }, { ms: 2000, r: '2 s' },
+  { ms: 5000, r: '5 s' }, { ms: 10000, r: '10 s' }, { ms: 30000, r: '30 s' }, { ms: 60000, r: '1 min' }, { ms: 300000, r: '5 min' },
+]
+const lerRitmo = () => {
+  try { const v = Number(localStorage.getItem('sg-atualizar')); return ritmos.some(r => r.ms === v) && localStorage.getItem('sg-atualizar') !== null ? v : AUTOMATICO }
+  catch { return AUTOMATICO }
+}
 
 // Limites reais do projeto: troca automática da fibra em 30 ms (netwatch) e trigger do rádio em 50 ms;
 // "Normal" = o que a bancada mediu em 16/10/2026.
@@ -91,13 +103,19 @@ export default function Visao() {
 
   const periodo = recorte ? `de=${recorte.de}&ate=${recorte.ate}` : `horas=${horas}`
   const curto = !recorte && horas <= CURTO
-  // Períodos curtos: gráfico a cada 1 s; nos demais, 10 s. Queda e volta chegam na hora pelo canal "visao".
-  const ao_vivo = recorte ? 0 : curto ? 1000 : 10000
-  const { dados: v } = useApi<TVisao>('/api/visao', curto ? 2000 : 10000, ['visao'])
-  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : ['visao'])
+  const [ritmo, setRitmo] = useState(lerRitmo)
+  const escolherRitmo = (ms: number) => { setRitmo(ms); try { localStorage.setItem('sg-atualizar', String(ms)) } catch { /* sem armazenamento: vale só nesta aba */ } }
+  const auto = ritmo === AUTOMATICO
+  // Automático: períodos curtos a cada 1 s, os demais a cada 10 s, e na hora pelo canal "visao" quando um enlace muda.
+  // Ritmo escolhido: tudo nesta tela recarrega exatamente nele, sem recargas extras (zoom fixo não recarrega).
+  const cada = (padrao: number) => (auto ? padrao : ritmo)
+  const canais = (c: string[]) => (auto ? c : [])
+  const ao_vivo = recorte ? 0 : cada(curto ? 1000 : 10000)
+  const { dados: v } = useApi<TVisao>('/api/visao', cada(curto ? 2000 : 10000), canais(['visao']))
+  const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : canais(['visao']))
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?${periodo}`, ao_vivo)
-  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 10000, ['alertas'])
-  const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 60000, ['chamados'])
+  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', cada(10000), canais(['alertas']))
+  const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', cada(60000), canais(['chamados']))
 
   const baixar = (nome: string, linhas: string[]) => {
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([linhas.join('\n')], { type: 'text/csv' })), download: nome })
@@ -183,6 +201,20 @@ export default function Visao() {
                   ))}
                   <div className="my-1 h-px bg-fio" />
                   <Menu.Item onSelect={() => setEscolhendo(true)} className={`${itemMenu} gap-2`}><CalendarBlank size={14} />Personalizado…</Menu.Item>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
+            <Menu.Root>
+              <Menu.Trigger asChild><Botao variante="contorno" title="Atualizar a cada">
+                <ArrowsClockwise />{ritmos.find(r => r.ms === ritmo)?.r}<CaretDown weight="fill" />
+              </Botao></Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Content align="end" sideOffset={6} className="z-50 min-w-44 rounded-lg border border-fio-forte bg-painel-alto p-1 text-[12.5px] shadow-2xl">
+                  <div className="px-2.5 pb-1 pt-1.5 text-[11px] text-tinta-3">Atualizar a cada</div>
+                  {ritmos.map(r => (
+                    <Menu.Item key={r.ms} onSelect={() => escolherRitmo(r.ms)}
+                      className={`${itemMenu} ${r.ms === ritmo ? '!text-fibra' : ''}`}>{r.r}</Menu.Item>
+                  ))}
                 </Menu.Content>
               </Menu.Portal>
             </Menu.Root>
