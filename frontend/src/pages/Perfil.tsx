@@ -147,7 +147,7 @@ function Avisos() {
       <div className={`flex flex-col gap-4 ${eu!.telegram ? '' : 'opacity-60'}`}>
         {equipe && (
           <Grupo titulo="Rede">
-            <Chave rotulo="Alertas do Zabbix" dica="Desligado, nenhum alerta chega." ligado={n.alertas} onChange={mudar('alertas')} />
+            <Chave rotulo="Alertas do Zabbix" dica="Se desligar, nenhum alerta chega." ligado={n.alertas} onChange={mudar('alertas')} />
             <div className="ml-4 flex flex-col gap-3 border-l border-fio pl-4">
               <Chave rotulo="Desastre" ligado={n.desastre} onChange={mudar('desastre')} desligado={!n.alertas} />
               <Chave rotulo="Alta" ligado={n.alta} onChange={mudar('alta')} desligado={!n.alertas} />

@@ -35,6 +35,14 @@ def _faixas_fora(pontos, serie):
     return out
 
 
+def _instante(texto: str) -> float:
+    """Data do livro de chamados: o Analista IA grava no formato do Zabbix ("2026.10.23 17:26:01"), não em ISO."""
+    try:
+        return datetime.fromisoformat(texto).timestamp()
+    except ValueError:
+        return datetime.strptime(texto, "%Y.%m.%d %H:%M:%S").timestamp()
+
+
 def metricas(de: int, ate: int):
     horas = max(1, round((time.time() - de) / 3600))
     pontos = [p for p in fonte.serie("latencia", horas) if de <= p["t"] <= ate]
@@ -56,7 +64,7 @@ def metricas(de: int, ate: int):
     resolvidos = [c for c in sg if c["status"] == "resolvido" and c["sla"]["solucao"]["em"]]
     no_prazo = [c for c in resolvidos if c["sla"]["solucao"]["em"] <= c["sla"]["solucao"]["prazo"]
                 and (c["sla"]["resposta"]["em"] or 0) <= c["sla"]["resposta"]["prazo"]]
-    noc = [c for c in livro.chamados() if de <= datetime.fromisoformat(c["inicio"]).timestamp() <= ate]
+    noc = [c for c in livro.chamados() if de <= _instante(c["inicio"]) <= ate]
     return {
         "de": de, "ate": ate,
         "disponibilidade": {"fibra": disp("fibra"), "radio": disp("radio"), "filial": filial},
