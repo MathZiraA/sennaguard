@@ -215,10 +215,15 @@ def alertas(horas=168):
                         "chamado": None,
                         "analise": _SIM_ANALISE.format(ini=_hora(ini), fim=_hora(fim)) if sev >= 4 and fim else None})
         return sorted(out, key=lambda a: (not a["ativo"], -a["inicio"]))
+    campos = {"selectHosts": ["host"], "select_acknowledges": ["message", "username", "clock", "action"],
+              "output": ["eventid", "name", "severity", "clock", "r_eventid", "acknowledged"]}
     evs = call("event.get", {"source": 0, "object": 0, "value": 1, "time_from": _agora() - horas * 3600,
-                             "selectHosts": ["host"], "select_acknowledges": ["message", "username", "clock", "action"],
-                             "output": ["eventid", "name", "severity", "clock", "r_eventid", "acknowledged"],
-                             "sortfield": ["clock"], "sortorder": "DESC"})
+                             "sortfield": ["clock"], "sortorder": "DESC", **campos})
+    # Problema ainda aberto mas que começou antes da janela também é alerta ativo (senão some do painel)
+    vistos = {e["eventid"] for e in evs}
+    antigos = [p["eventid"] for p in call("problem.get", {"output": ["eventid"]}) if p["eventid"] not in vistos]
+    if antigos:
+        evs += call("event.get", {"eventids": antigos, **campos})
     rec_ids = [e["r_eventid"] for e in evs if e["r_eventid"] != "0"]
     fins = {r["eventid"]: int(r["clock"]) for r in call("event.get", {"eventids": rec_ids, "output": ["eventid", "clock"]})} if rec_ids else {}
     out = []
@@ -329,12 +334,17 @@ def equipamentos():
         fora = {"RADIO-P2P-FILIAL"}  # a antena da Filial parou de responder junto com o enlace
         return [dict(e, up=e["nome"] not in fora, latencia=None if e["nome"] in fora else e["latencia"] or _lat_fibra(t),
                      sinal=None if e["nome"] in fora else e.get("sinal")) for e in _SIM_EQUIP]
-    hosts = call("host.get", {"output": ["hostid", "host", "status"], "selectInterfaces": ["ip"],
+    hosts = call("host.get", {"output": ["hostid", "host", "status"], "selectInterfaces": ["ip", "available"],
                               "selectInventory": ["model", "location"]})
-    # problem.get do Zabbix 7.0 não aceita selectHosts: os hosts vêm das triggers em estado de problema
-    com_problema = {h["hostid"] for t in call("trigger.get", {"output": ["triggerid"], "filter": {"value": 1},
-                                                              "monitored": True, "selectHosts": ["hostid"]})
-                    for h in t.get("hosts", [])}
+    # Fora = parado no Zabbix, sem resposta em nenhuma interface, ou com problema Alta/Desastre (ex.: sem ping).
+    # Um aviso qualquer (porta reserva sem link) não derruba o equipamento. problem.get do Zabbix 7.0 não aceita
+    # selectHosts: os hosts vêm das triggers em estado de problema.
+    graves = {h["hostid"] for t in call("trigger.get", {"output": ["triggerid"], "filter": {"value": 1}, "min_severity": 4,
+                                                        "monitored": True, "selectHosts": ["hostid"]})
+              for h in t.get("hosts", [])}
+    sem_resposta = {h["hostid"] for h in hosts
+                    if h.get("interfaces") and all(i.get("available") == "2" for i in h["interfaces"])}
+    com_problema = graves | sem_resposta
     return [{"nome": h["host"], "tipo": _tipo(h["host"]), "ip": h["interfaces"][0]["ip"] if h.get("interfaces") else "",
              "modelo": (h.get("inventory") or {}).get("model", ""),
              "local": (h.get("inventory") or {}).get("location") or ("Filial" if "FILIAL" in h["host"].upper() else "Matriz"),
