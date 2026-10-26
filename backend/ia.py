@@ -5,6 +5,7 @@ As ferramentas são funções Python com docstring e tipos: os dois SDKs montam 
 """
 import logging
 import os
+import time
 from pathlib import Path
 
 log = logging.getLogger("sennaguard.ia")
@@ -90,20 +91,21 @@ def _gemini(system, mensagens, ferramentas):
                            http_options=types.HttpOptions(timeout=TEMPO_LIMITE_MS))
     historico = [types.Content(role="user" if m["papel"] == "usuario" else "model", parts=[types.Part(text=m["texto"])])
                  for m in mensagens[:-1]]
-    erro = None
-    for modelo in MODELOS_GEMINI:
-        try:
-            chat = cliente.chats.create(model=modelo, history=historico, config=types.GenerateContentConfig(
-                system_instruction=system, tools=ferramentas or None, temperature=0.2,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(maximum_remote_calls=10)))
-            return (chat.send_message(mensagens[-1]["texto"]).text or "").strip()
-        except errors.APIError as e:
-            if e.code not in (429, 500, 503, 504):
-                raise
-            erro = e
-            log.warning("Gemini %s indisponível (%s), tentando o próximo", modelo, e.code)
-        except (httpx.TimeoutException, httpx.TransportError) as e:
-            # Rede lenta ou modelo pendurado: antes isso virava erro 500 no chat
-            erro = e
-            log.warning("Gemini %s sem resposta (%s), tentando o próximo", modelo, type(e).__name__)
-    raise IaIndisponivel(f"A IA está sobrecarregada agora, tente de novo em instantes ({erro}).")
+    # Duas rodadas pelos modelos: a camada gratuita costuma liberar em poucos segundos depois de um 503
+    for rodada in range(2):
+        if rodada:
+            time.sleep(5)
+        for modelo in MODELOS_GEMINI:
+            try:
+                chat = cliente.chats.create(model=modelo, history=historico, config=types.GenerateContentConfig(
+                    system_instruction=system, tools=ferramentas or None, temperature=0.2,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(maximum_remote_calls=10)))
+                return (chat.send_message(mensagens[-1]["texto"]).text or "").strip()
+            except errors.APIError as e:
+                if e.code not in (429, 500, 503, 504):
+                    raise
+                log.warning("Gemini %s indisponível (%s), tentando o próximo", modelo, e.code)
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                # Rede lenta ou modelo pendurado: antes isso virava erro 500 no chat
+                log.warning("Gemini %s sem resposta (%s), tentando o próximo", modelo, type(e).__name__)
+    raise IaIndisponivel("A IA gratuita do Google está sobrecarregada agora. Tente de novo em 1 ou 2 minutos.")
