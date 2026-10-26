@@ -17,6 +17,8 @@ TOKEN = os.environ.get("ZABBIX_TOKEN", "")
 HOST = os.environ.get("NOC_HOST", "R-FILIAL")
 FIBRA_IP = os.environ.get("NOC_FIBRA_FILIAL", "10.0.1.2")  # IP da Filial em cada enlace (/etc/noc/noc.conf)
 RADIO_IP = os.environ.get("NOC_RADIO_FILIAL", "10.0.2.2")
+# Marco de início da operação (segundos Unix): alertas anteriores ficam só no Zabbix. 0 = mostra tudo
+INICIO = int(os.environ.get("NOC_INICIO", "0") or 0)
 SIMULACAO = not (URL and TOKEN)
 
 SEVERIDADES = {"5": "Desastre", "4": "Alta", "3": "Média", "2": "Aviso", "1": "Informação", "0": "Não classificada"}
@@ -240,11 +242,12 @@ def alertas(horas=168):
         return sorted(out, key=lambda a: (not a["ativo"], -a["inicio"]))
     campos = {"selectHosts": ["host"], "select_acknowledges": ["message", "username", "clock", "action"],
               "output": ["eventid", "name", "severity", "clock", "r_eventid", "acknowledged"]}
-    evs = call("event.get", {"source": 0, "object": 0, "value": 1, "time_from": _agora() - horas * 3600,
+    evs = call("event.get", {"source": 0, "object": 0, "value": 1, "time_from": max(_agora() - horas * 3600, INICIO),
                              "sortfield": ["clock"], "sortorder": "DESC", **campos})
     # Problema ainda aberto mas que começou antes da janela também é alerta ativo (senão some do painel)
     vistos = {e["eventid"] for e in evs}
-    antigos = [p["eventid"] for p in call("problem.get", {"output": ["eventid"]}) if p["eventid"] not in vistos]
+    antigos = [p["eventid"] for p in call("problem.get", {"output": ["eventid"], "time_from": INICIO})
+               if p["eventid"] not in vistos]
     if antigos:
         evs += call("event.get", {"eventids": antigos, **campos})
     rec_ids = [e["r_eventid"] for e in evs if e["r_eventid"] != "0"]
