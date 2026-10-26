@@ -64,7 +64,7 @@ def vigiar_enlace():
         telegram.para_equipe(texto, preferencia="alerta_email", tipo="caminho")
 
 
-@tarefa(15)
+@tarefa(5)
 def vigiar_alertas():
     ativos = {a["id"]: a for a in fonte.alertas(24) if a["ativo"]}
     anteriores = _estado["alertas"]

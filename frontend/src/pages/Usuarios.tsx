@@ -8,10 +8,10 @@ import Modal from '../components/Modal'
 import { Botao, Card, Carregando, Chave } from '../components/ui'
 
 const PAPEIS: Record<string, string> = {
-  Administrador: 'Configura o NOC e gerencia usuários',
-  Analista: 'Investiga incidentes e comenta eventos',
-  Operador: 'Acompanha o plantão e reconhece alertas',
-  Cliente: 'Abre chamados e acompanha a Filial',
+  Administrador: 'Gerencia usuários e TVs, aprova testes de failover e atende chamados',
+  Analista: 'Investiga incidentes, cuida de backups e manutenções, pede testes de failover',
+  Operador: 'Plantão: acompanha o enlace, reconhece alertas e atende chamados',
+  Cliente: 'Abre chamados e acompanha o enlace da Filial',
 }
 const corPapel: Record<string, string> = {
   Administrador: 'var(--color-fibra)', Analista: 'var(--color-radio)', Operador: 'var(--color-tinta-2)', Cliente: 'var(--color-media)',

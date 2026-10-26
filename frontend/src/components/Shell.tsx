@@ -34,7 +34,7 @@ const item = 'flex h-8 cursor-default items-center gap-2 rounded-md px-2.5 text-
 export default function Shell() {
   const { eu, pode, sair } = useSessao()
   const [recolhida, setRecolhida] = useState(() => { try { return localStorage.getItem('sg:lateral') === '1' } catch { return false } })
-  const { dados: alertas } = useApi<Alerta[]>(pode('alertas') ? '/api/alertas' : '', 30000, ['alertas'])
+  const { dados: alertas } = useApi<Alerta[]>(pode('alertas') ? '/api/alertas' : '', 10000, ['alertas'])
   // Para a equipe: chamados abertos pela Filial que ninguém assumiu ainda
   const { dados: ch } = useApi<ListaChamados>(pode('atender_chamado') ? '/api/chamados' : '', 60000, ['chamados'])
   const semDono = ch?.manuais.filter(c => c.status === 'aberto').length ?? 0

@@ -91,7 +91,7 @@ export default function Visao() {
   const { dados: v } = useApi<TVisao>('/api/visao', 10000, ['visao'])
   const { dados: lat } = useApi<Ponto[]>(`/api/serie/latencia?${periodo}`, ao_vivo, recorte ? [] : ['visao'])
   const { dados: trf } = useApi<Ponto[]>(`/api/serie/trafego?${periodo}`, ao_vivo)
-  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 30000, ['alertas'])
+  const { dados: alertas } = useApi<Alerta[]>(interno ? '/api/alertas' : '', 10000, ['alertas'])
   const { dados: ch } = useApi<ListaChamados>(interno ? '' : '/api/chamados', 60000, ['chamados'])
 
   const baixar = (nome: string, linhas: string[]) => {

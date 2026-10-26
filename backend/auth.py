@@ -18,13 +18,14 @@ DURACAO = 12 * 3600  # um plantão
 COOKIE_SEGURO = os.environ.get("COOKIE_SEGURO") == "1"  # 1 em produção (HTTPS pelo Apache)
 
 # O que cada papel pode fazer. O cliente da Filial só vê o estado do enlace e os chamados.
+# Quem abre chamado é o cliente; a equipe do NOC atende. Teste de failover derruba a fibra: só o Analista pede
+# e só o Administrador aprova. Operador é o plantão (acompanha, reconhece alertas e atende chamados).
+_EQUIPE = {"visao", "alertas", "reconhecer", "chamados", "atender_chamado", "equipamentos", "conhecimento", "chat"}
 PERMISSOES = {
-    "Administrador": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos", "usuarios",
-                      "relatorios", "manutencao", "backups", "testes", "aprovar_teste", "conhecimento", "editar_conhecimento", "chat"},
-    "Analista": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos",
-                 "relatorios", "manutencao", "backups", "testes", "conhecimento", "editar_conhecimento", "chat"},
-    "Operador": {"visao", "alertas", "reconhecer", "chamados", "abrir_chamado", "atender_chamado", "equipamentos",
-                 "testes", "conhecimento", "chat"},
+    "Administrador": _EQUIPE | {"usuarios", "relatorios", "manutencao", "backups", "testes", "aprovar_teste",
+                                "editar_conhecimento"},
+    "Analista": _EQUIPE | {"relatorios", "manutencao", "backups", "testes", "editar_conhecimento"},
+    "Operador": set(_EQUIPE),
     "Cliente": {"visao", "chamados", "abrir_chamado", "conhecimento", "chat"},
 }
 

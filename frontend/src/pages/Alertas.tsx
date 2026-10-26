@@ -10,7 +10,7 @@ import { Botao, Card, Carregando, Led, Segmentado, Sev, Vazio } from '../compone
 const SEVS = ['Desastre', 'Alta', 'Média', 'Aviso']
 
 export default function Alertas() {
-  const { dados, recarregar } = useApi<Alerta[]>('/api/alertas', 30000, ['alertas'])
+  const { dados, recarregar } = useApi<Alerta[]>('/api/alertas', 10000, ['alertas'])
   const [params, setParams] = useSearchParams()
   const [filtro, setFiltro] = useState<'ativos' | 'todos'>('todos')
   const [sevs, setSevs] = useState<string[]>([])

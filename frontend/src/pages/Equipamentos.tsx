@@ -19,7 +19,7 @@ type Detalhe = Equipamento & {
 const LIMITES_SINAL = [{ valor: -60, rotulo: 'Crítico', tipo: 'critico' as const }, { valor: -53, rotulo: 'Normal', tipo: 'normal' as const }]
 
 export default function Equipamentos() {
-  const { dados } = useApi<Equipamento[]>('/api/equipamentos', 15000, ['visao'])
+  const { dados } = useApi<Equipamento[]>('/api/equipamentos', 10000, ['visao'])
   const { dados: v } = useApi<Visao>('/api/visao', 10000, ['visao'])
   const { dados: sinal } = useApi<Ponto[]>('/api/serie/sinal?horas=24', 60000)
   const [lado, setLado] = useState<'filial' | 'matriz'>('filial')
@@ -93,7 +93,7 @@ export default function Equipamentos() {
 }
 
 function FichaEquipamento({ nome }: { nome: string }) {
-  const { dados: d, erro } = useApi<Detalhe>(`/api/equipamentos/${encodeURIComponent(nome)}`, 15000)
+  const { dados: d, erro } = useApi<Detalhe>(`/api/equipamentos/${encodeURIComponent(nome)}`, 10000)
   if (erro) return <p className="text-desastre">{erro}</p>
   if (!d) return <Carregando />
   const r = d.recursos

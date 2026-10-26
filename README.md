@@ -6,10 +6,12 @@ Painel do NOC do projeto [noc-senai-tcc](https://github.com/MathZiraA/noc-senai-
 
 | Perfil | Vê | Pode |
 | --- | --- | --- |
-| Administrador | tudo | reconhecer alertas, atender chamados, criar/editar/remover usuários, redefinir senhas |
-| Analista | enlace, alertas (com análise da IA), chamados, equipamentos | reconhecer alertas, atender chamados |
-| Operador | enlace, alertas, chamados, equipamentos | reconhecer alertas, atender chamados |
+| Administrador | tudo | o que o Analista pode, mais usuários, telas de TV e aprovar testes de failover. Não abre chamado |
+| Analista | enlace, alertas (com análise da IA), chamados, equipamentos, backups, relatórios | reconhecer alertas, atender chamados, manutenções, base de conhecimento, pedir teste de failover. Não abre chamado |
+| Operador | enlace, alertas, chamados, equipamentos, manutenções | reconhecer alertas, atender chamados. Não abre chamado nem pede teste |
 | Cliente | estado do enlace, os chamados automáticos e os que ele abriu | abrir chamados (SG-xxx) e responder |
+
+Quem abre chamado é sempre o cliente; a equipe do NOC atende. O teste de failover derruba a fibra de propósito: o Analista pede e só o Administrador aprova.
 
 Senhas com scrypt, sessão em cookie `HttpOnly` + `SameSite=Strict` (12 h), bloqueio de 5 min após 5 senhas erradas, e sempre pelo menos um administrador ativo.
 
