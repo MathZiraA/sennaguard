@@ -28,7 +28,8 @@ const NAV = [
 // Barra inferior do celular: 4 atalhos + "Mais" (o resto do menu fica na folha que sobe)
 const ATALHOS_EQUIPE = ['/', '/alertas', '/chamados', '/equipamentos']
 const ATALHOS_CLIENTE = ['/', '/chamados', '/conhecimento']
-const AJUDA = 'https://github.com/MathZiraA/noc-senai-tcc/blob/main/docs/DOCUMENTACAO.md'
+// O noc-senai-tcc é privado (o link dava 404 para o cliente); o README do SennaGuard é público
+const AJUDA = 'https://github.com/MathZiraA/sennaguard#readme'
 const item = 'flex h-8 cursor-default items-center gap-2 rounded-md px-2.5 text-tinta-2 outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-tinta'
 
 export default function Shell() {
@@ -56,7 +57,7 @@ export default function Shell() {
   const local = useLocation()
   const ir = useNavigate()
   useEffect(() => { iniciarTempoReal(); return pararTempoReal }, [])
-  useEffect(() => setMais(false), [local.pathname])
+  useEffect(() => { setMais(false) }, [local.pathname])
   useEffect(() => { if (eu && !eu.tour_visto) setTour(true) }, [eu?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const permitidos = NAV.filter(n => pode(n.permissao))

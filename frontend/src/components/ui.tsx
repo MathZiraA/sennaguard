@@ -52,7 +52,11 @@ export function Led({ cor, pulsa = false }: { cor: string; pulsa?: boolean }) {
   return <span className={`inline-block size-1.5 shrink-0 rounded-full ${pulsa ? 'respira' : ''}`} style={{ background: cor, boxShadow: `0 0 8px ${cor}` }} />
 }
 
-export function Sev({ nome }: { nome: string }) {
+// O livro de chamados do Analista IA grava a severidade em inglês (nome do Zabbix)
+const SEV_PT: Record<string, string> = { Disaster: 'Desastre', High: 'Alta', Average: 'Média', Warning: 'Aviso', Information: 'Informação' }
+
+export function Sev({ nome: original }: { nome: string }) {
+  const nome = SEV_PT[original] ?? original
   const cor = corSev[nome] ?? 'var(--color-tinta-3)'
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"

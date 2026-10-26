@@ -301,12 +301,15 @@ def detalhe_equipamento(nome):
             if "Operational status" in n:
                 d["up"] = i["lastvalue"] == "1"
             elif "Bits received" in n:
-                d["rx"] = round(float(i["lastvalue"] or 0) / 1e6, 1)
+                d["rx"] = round(float(i["lastvalue"] or 0) / 1e6, 2)  # 2 casas: o tráfego da bancada fica abaixo de 1 Mbps
             elif "Bits sent" in n:
-                d["tx"] = round(float(i["lastvalue"] or 0) / 1e6, 1)
+                d["tx"] = round(float(i["lastvalue"] or 0) / 1e6, 2)
     sinal = _item_sinal(nome)
     cpu, mem, up = valor("cpu utilization"), valor("memory utilization"), valor("uptime")
-    return {"nome": nome, "tipo": _tipo(nome), "ip": h[0]["interfaces"][0]["ip"] if h[0].get("interfaces") else "",
+    # Mesmo critério da lista de equipamentos (antes o campo faltava e a ficha dizia "Sem resposta")
+    no_ar = next((e["up"] for e in equipamentos() if e["nome"] == nome), None)
+    return {"nome": nome, "tipo": _tipo(nome), "up": no_ar,
+            "ip": h[0]["interfaces"][0]["ip"] if h[0].get("interfaces") else "",
             "recursos": {"cpu": round(float(cpu)) if cpu else None, "memoria": round(float(mem)) if mem else None,
                          "uptime": int(float(up)) if up else None},
             "interfaces": sorted(ifs.values(), key=lambda d: d["nome"]),

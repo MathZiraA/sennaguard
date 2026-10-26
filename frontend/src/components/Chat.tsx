@@ -18,7 +18,8 @@ export default function Chat() {
   const [texto, setTexto] = useState('')
   const [pensando, setPensando] = useState(false)
   const fim = useRef<HTMLDivElement>(null)
-  useEffect(() => fim.current?.scrollIntoView({ behavior: 'smooth' }), [msgs, pensando])
+  // Com chaves: o Chrome novo devolve uma Promise no scrollIntoView, e o React tentaria chamá-la como limpeza
+  useEffect(() => { fim.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs, pensando])
 
   const enviar = async (pergunta: string) => {
     if (!pergunta.trim() || pensando) return

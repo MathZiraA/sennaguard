@@ -33,7 +33,7 @@ export default function Alertas() {
         <div>
           <h1 className="text-[22px] font-medium tracking-[-0.02em] text-titulo">Alertas</h1>
           <p className="mt-1 text-tinta-3">
-            Problemas dos 9 triggers de redundância nos últimos 7 dias, agrupados em incidentes.
+            Problemas de todos os equipamentos nos últimos 7 dias (e os que continuam abertos), agrupados em incidentes.
             {ia?.percentual != null && <> Analista IA: <b className="font-semibold text-tinta">{ia.percentual}% útil</b> em {ia.avaliacoes} avaliações.</>}
           </p>
         </div>
