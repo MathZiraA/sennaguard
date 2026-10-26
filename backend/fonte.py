@@ -177,7 +177,8 @@ def serie(metrica, horas, ate=None):
         escala = 1  # já vem em dBm
     else:  # tráfego: interfaces do template "Mikrotik by SNMP"
         rec = call("item.get", {"hostids": h["hostid"], "output": ["itemid", "value_type", "name"], "search": {"name": "Bits received"}})
-        achar = lambda *nomes: next((i for i in rec if any(n.lower() in i["name"].lower() for n in nomes)), None)
+        # Um nome de cada vez, na ordem: "sfp1" antes de "FIBRA" (o comentário da ether2-reserva também diz "fibra")
+        achar = lambda *nomes: next((i for n in nomes for i in rec if n.lower() in i["name"].lower()), None)
         itens = {"fibra": achar("sfp1", "FIBRA"), "radio": achar("ether1", "RADIO")}
         escala = 1 / 1_000_000  # bps -> Mbps
     for nome, it in itens.items():
