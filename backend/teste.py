@@ -26,6 +26,7 @@ import fonte
 import telegram
 import tempo_real
 from banco import db
+from html import escape as _e  # texto de usuário nas mensagens HTML do Telegram
 
 router = APIRouter()
 CHAVE = Path(os.environ.get("SENNAGUARD_TESTE_KEY", "/etc/sennaguard/mikrotik_teste_key"))
@@ -155,18 +156,21 @@ def pedir(p: Pedido, u=auth.exigir("testes")):
         tid = con.execute("insert into testes (pedido_por, pedido_por_nome, motivo, agendado_para, criado_em) values (?,?,?,?,?)",
                           (u["id"], u["nome"], p.motivo, p.agendado_para, int(time.time()))).lastrowid
     tempo_real.avisar("testes")
-    telegram.para_equipe(f"🧪 <b>Pedido de teste de failover #{tid}</b> por {u['nome']}\n{p.motivo}\nQuando: {_h(p.agendado_para)}\n"
+    telegram.para_equipe(f"🧪 <b>Pedido de teste de failover #{tid}</b> por {_e(u['nome'])}\n{_e(p.motivo)}\nQuando: {_h(p.agendado_para)}\n"
                          "Aprove ou recuse em SennaGuard → Testes de failover.", papeis=("Administrador",))
     return {"id": tid}
 
 
 def _decidir(tid, u, novo, permitido_de):
     with db() as con:
-        r = con.execute("select status from testes where id=?", (tid,)).fetchone()
+        r = con.execute("select status, pedido_por from testes where id=?", (tid,)).fetchone()
         if not r:
             raise HTTPException(404, "Teste não encontrado.")
         if r["status"] not in permitido_de:
             raise HTTPException(409, f"O teste está {r['status']} e não pode mudar para {novo}.")
+        # O teste derruba a fibra: sempre duas pessoas (quem pede não aprova, nem sendo administrador)
+        if novo == "aprovado" and r["pedido_por"] == u["id"]:
+            raise HTTPException(403, "Quem pediu o teste não pode aprová-lo. Peça a outro administrador.")
         con.execute("update testes set status=?, decidido_por=?, decidido_em=? where id=?", (novo, u["nome"], int(time.time()), tid))
     tempo_real.avisar("testes")
 
@@ -222,7 +226,8 @@ def laudo(tid: int, _=auth.exigir("testes")):
         pdf.set_text_color(117, 114, 127)
         pdf.cell(55, 8, k)
         pdf.set_text_color(27, 26, 33)
-        pdf.multi_cell(0, 8, v, new_x="LMARGIN", new_y="NEXT")
+        # A fonte padrão do PDF só tem Latin-1: emoji ou "→" no motivo trocam por "?" em vez de derrubar o laudo
+        pdf.multi_cell(0, 8, v.encode("latin-1", "replace").decode("latin-1"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(117, 114, 127)

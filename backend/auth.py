@@ -47,10 +47,10 @@ def confere_senha(senha: str, guardado: str | None) -> bool:
 _falhas: dict[str, list[float]] = defaultdict(list)
 
 
-def bloqueado(chave: str) -> bool:
+def bloqueado(chave: str, limite: int = 5) -> bool:
     agora = time.time()
     _falhas[chave] = [t for t in _falhas[chave] if agora - t < 300]
-    return len(_falhas[chave]) >= 5
+    return len(_falhas[chave]) >= limite
 
 
 def falhou(chave: str):
@@ -59,6 +59,11 @@ def falhou(chave: str):
 
 def _th(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def derrubar_outras_sessoes(con: sqlite3.Connection, req: Request, uid: int):
+    """Depois de trocar senha ou e-mail: só a sessão de quem trocou continua (um cookie roubado deixa de valer)."""
+    con.execute("delete from sessoes where usuario_id=? and token_hash!=?", (uid, _th(req.cookies.get(COOKIE, ""))))
 
 
 def abrir_sessao(con: sqlite3.Connection, resp: Response, uid: int, ip: str):

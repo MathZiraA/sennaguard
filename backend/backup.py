@@ -20,6 +20,7 @@ import ia
 import telegram
 import tempo_real
 from banco import BANCO, db
+from html import escape as _e  # texto de usuário nas mensagens HTML do Telegram
 
 router = APIRouter()
 PASTA = Path(os.environ.get("SENNAGUARD_BACKUPS", BANCO.parent / "backups"))
@@ -86,7 +87,7 @@ def backup_diario():
         try:
             fazer_backup(host)
         except Exception as e:
-            telegram.para_equipe(f"⚠️ Backup do {host} falhou: {e}", papeis=("Administrador",))
+            telegram.para_equipe(f"⚠️ Backup do {host} falhou: {_e(str(e))}", papeis=("Administrador",))
 
 
 def _arquivo(host, nome):

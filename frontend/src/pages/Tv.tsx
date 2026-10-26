@@ -7,15 +7,17 @@ import { curto } from './Visao'
 
 type DadosTv = { visao: Visao; latencia: Ponto[]; alertas: { id: string; severidade: string; nivel: number; nome: string; inicio: number }[] }
 
-/** Tela da TV do NOC: aberta por link fixo (?k=), sem login, atualiza a cada 10 s. */
+/** Tela da TV do NOC: aberta por link fixo (#k=), sem login, atualiza a cada 2 s. */
 export default function Tv() {
-  const k = new URLSearchParams(location.search).get('k') ?? ''
+  // A chave fica no fragmento (#k=), que o navegador não envia ao servidor; links antigos (?k=) viram #k= na hora
+  const k = new URLSearchParams(location.hash.slice(1)).get('k') ?? new URLSearchParams(location.search).get('k') ?? ''
+  useEffect(() => { if (location.search.includes('k=')) history.replaceState(null, '', `${location.pathname}#k=${k}`) }, [k])
   const [d, setD] = useState<DadosTv | null>(null)
   const [erro, setErro] = useState('')
   const [agora, setAgora] = useState(new Date())
 
   useEffect(() => {
-    const carregar = () => api<DadosTv>(`/api/tv?k=${encodeURIComponent(k)}`).then(r => { setD(r); setErro('') }).catch(e => setErro(e.message))
+    const carregar = () => api<DadosTv>('/api/tv', { headers: { 'X-TV-Chave': k } }).then(r => { setD(r); setErro('') }).catch(e => setErro(e.message))
     carregar()
     const a = setInterval(carregar, 2000), b = setInterval(() => setAgora(new Date()), 1000)
     return () => { clearInterval(a); clearInterval(b) }

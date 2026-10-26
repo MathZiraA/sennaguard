@@ -9,6 +9,7 @@ import time
 import fonte
 import telegram
 import tempo_real
+from html import escape as _e  # texto de usuário nas mensagens HTML do Telegram
 
 log = logging.getLogger("sennaguard.agenda")
 TAREFAS: list[list] = []  # [intervalo em s, função, última execução]
@@ -78,7 +79,7 @@ def vigiar_alertas():
         a = ativos[eid]
         if a["nivel"] >= 3:  # Média ou mais grave
             icone = "🔴" if a["nivel"] >= 4 else "🟣"
-            telegram.para_equipe(f"{icone} <b>{a['severidade']}</b> · {a['host']}\n{a['nome']}", preferencia="alerta_email",
+            telegram.para_equipe(f"{icone} <b>{a['severidade']}</b> · {_e(a['host'])}\n{_e(a['nome'])}", preferencia="alerta_email",
                                  tipo=TIPO_ALERTA[min(a["nivel"], 5)], urgente=a["nivel"] >= 5)
 
 

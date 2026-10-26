@@ -99,12 +99,13 @@ systemctl restart sennaguard
 apache2ctl configtest 2>/dev/null && systemctl reload apache2
 
 echo "==> 7/7 Primeiro administrador"
-ADMINS=$(sudo -u sennaguard env $(grep -v '^#' "$ETC/sennaguard.env" | xargs) "$APP/.venv/bin/python" -c \
+# O .env é lido dentro do processo do usuário sennaguard: os tokens não aparecem na lista de processos
+ADMINS=$(runuser -u sennaguard -- bash -c 'set -a; . "$0"; set +a; shift; exec "$@"' "$ETC/sennaguard.env" _ "$APP/.venv/bin/python" -c \
     "import sys; sys.path.insert(0,'$APP/backend'); import main; main.iniciar(); print(main.db().execute(\"select count(*) from usuarios where papel='Administrador'\").fetchone()[0])")
 if [ "$ADMINS" = 0 ]; then
     read -rp "E-mail do administrador: " EMAIL
     read -rp "Nome: " NOME
-    sudo -u sennaguard env $(grep -v '^#' "$ETC/sennaguard.env" | xargs) \
+    runuser -u sennaguard -- bash -c 'set -a; . "$0"; set +a; shift; exec "$@"' "$ETC/sennaguard.env" _ \
         "$APP/.venv/bin/python" "$APP/backend/gerenciar.py" criar-admin --email "$EMAIL" --nome "$NOME"
 fi
 

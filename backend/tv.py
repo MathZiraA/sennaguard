@@ -7,7 +7,7 @@ import hashlib
 import secrets
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import Header, APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 import auth
@@ -43,7 +43,7 @@ def criar(t: NovaTv, u=auth.exigir("usuarios")):
     with db() as con:
         con.execute("insert into tv_links (nome, token_hash, criado_em, criado_por) values (?,?,?,?)",
                     (t.nome, _h(k), int(time.time()), u["nome"]))
-    return {"chave": k}  # o front monta https://<servidor>/sennaguard/tv?k=<chave>
+    return {"chave": k}  # o front monta https://<servidor>/sennaguard/tv#k=<chave>
 
 
 @router.delete("/api/tv-links/{tid}", status_code=204)
@@ -53,7 +53,9 @@ def revogar(tid: int, _=auth.exigir("usuarios")):
 
 
 @router.get("/api/tv")
-def tela(k: str):
+def tela(x_tv_chave: str | None = Header(default=None)):
+    # A chave vem no cabeçalho (o link usa #k=, que o navegador nunca envia): não fica no log de acesso do Apache
+    k = x_tv_chave or ""
     with db() as con:
         r = con.execute("select id from tv_links where token_hash=? and revogado_em is null", (_h(k),)).fetchone()
         if not r:

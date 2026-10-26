@@ -36,12 +36,13 @@ class TrocaEmail(BaseModel):
 
 
 @router.put("/api/eu/email", status_code=204)
-def trocar_email(d: TrocaEmail, u=auth.exigir("visao")):
+def trocar_email(d: TrocaEmail, req: Request, u=auth.exigir("visao")):
     if not auth.confere_senha(d.senha, u["senha_hash"]):
         raise HTTPException(400, "Senha atual incorreta.")
     try:
         with db() as con:
-            con.execute("update usuarios set email=? where id=?", (d.email.lower(), u["id"]))
+            con.execute("update usuarios set email=? where id=?", (d.email.strip().lower(), u["id"]))
+            auth.derrubar_outras_sessoes(con, req, u["id"])
     except sqlite3.IntegrityError:
         raise HTTPException(409, "Já existe um usuário com esse e-mail.")
 

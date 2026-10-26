@@ -76,7 +76,9 @@ def rascunhar_de_chamado(cid: int):
             regs = con.execute("select autor_nome, autor_papel, acao, texto from chamado_registros where chamado_id=? order by seq", (cid,)).fetchall()
             if not c or con.execute("select 1 from artigos where origem_chamado=?", (cid,)).fetchone():
                 return
-        conversa = "\n".join(f"[{r['autor_papel']}] {r['autor_nome']} ({r['acao']}): {r['texto']}" for r in regs if r["texto"])
+        # Notas internas ficam fora: o artigo publicado é lido pelo cliente
+        conversa = "\n".join(f"[{r['autor_papel']}] {r['autor_nome']} ({r['acao']}): {r['texto']}"
+                             for r in regs if r["texto"] and r["acao"] != "nota")
         rascunho = None
         if ia.provedor():
             try:

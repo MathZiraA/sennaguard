@@ -175,7 +175,7 @@ function TelasTv() {
   const criar = async (e: FormEvent) => {
     e.preventDefault()
     const { chave } = await api<{ chave: string }>('/api/tv-links', { method: 'POST', body: JSON.stringify({ nome }) })
-    setNovo(`${location.origin}${import.meta.env.BASE_URL}tv?k=${chave}`); setCopiado(false); recarregar()
+    setNovo(`${location.origin}${import.meta.env.BASE_URL}tv#k=${chave}`); setCopiado(false); recarregar()
   }
   return (
     <Card titulo="Telas de TV" extra={<span className="text-[11px] text-tinta-3">link fixo, sem login, só mostra o enlace e os alertas ativos</span>}>

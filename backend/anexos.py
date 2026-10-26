@@ -43,9 +43,13 @@ async def ler_corpo(req: Request, limite: int) -> bytes:
     """Corpo cru da requisição, recusando antes de ler quando o tamanho declarado já passa do limite."""
     if int(req.headers.get("content-length") or 0) > limite:
         raise HTTPException(413, f"Arquivo maior que {limite // (1024 * 1024)} MB.")
-    corpo = await req.body()
-    if len(corpo) > limite:
-        raise HTTPException(413, f"Arquivo maior que {limite // (1024 * 1024)} MB.")
+    # Lê em blocos e para ao passar do limite: sem Content-Length (envio "chunked") o corpo inteiro iria para a memória
+    corpo = bytearray()
+    async for parte in req.stream():
+        corpo += parte
+        if len(corpo) > limite:
+            raise HTTPException(413, f"Arquivo maior que {limite // (1024 * 1024)} MB.")
+    corpo = bytes(corpo)
     if not corpo:
         raise HTTPException(400, "Arquivo vazio.")
     return corpo
@@ -67,6 +71,9 @@ async def enviar(req: Request, nome: str = "arquivo", u=auth.exigir("chamados"))
     nome = (Path(nome).name or "arquivo")[:120]
     with db() as con:
         _limpar_soltos(con)
+        # Cota: no máximo 20 anexos ainda não enviados por pessoa (impede encher o disco com uploads soltos)
+        if con.execute("select count(*) from anexos where enviado_por=? and chamado_id is null", (u["id"],)).fetchone()[0] >= 20:
+            raise HTTPException(429, "Muitos anexos esperando envio. Envie a mensagem ou aguarde e tente de novo.")
         aid = con.execute("insert into anexos (nome,tipo,tamanho,sha256,enviado_por,em) values (?,?,?,?,?,?)",
                           (nome, tipo, len(corpo), hashlib.sha256(corpo).hexdigest(), u["id"], int(time.time()))).lastrowid
         PASTA.mkdir(parents=True, exist_ok=True)

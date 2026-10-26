@@ -5,6 +5,7 @@ Zabbix real:  defina ZABBIX_URL (…/api_jsonrpc.php) e ZABBIX_TOKEN; sem eles, 
 Em produção a interface já compilada (frontend/dist) é servida por esta mesma API.
 """
 import os
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -33,12 +34,13 @@ import tempo_real
 import teste
 import tv
 from banco import BANCO, db  # noqa: F401  (BANCO e db usados também por gerenciar.py)
+from html import escape as _e  # texto de usuário nas mensagens HTML do Telegram
 
 DIST = Path(__file__).parent.parent / "frontend" / "dist"
 PAPEIS = ("Administrador", "Analista", "Operador", "Cliente")
 SENHA_DEMO = "senai2026"  # só no modo simulação
 
-app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None)
+app = FastAPI(title="SennaGuard API", docs_url=None, redoc_url=None, openapi_url=None)  # sem mapa público da API
 for r in (tempo_real.router, telegram.router, tv.router, relatorio.router, manutencao.router,
           backup.router, chat.router, conhecimento.router, teste.router, anexos.router, perfil.router):
     app.include_router(r)
@@ -101,17 +103,23 @@ def _publico(u):
         "telegram": bool(u.get("telegram_chat_id")), "telegram_disponivel": telegram.ativo()} | perfil.do_usuario(u)
 
 
+_SENHA_FALSA = auth.hash_senha(secrets.token_hex(16))
+
+
 @app.post("/api/login")
 def login(dados: Login, req: Request, resp: Response):
     # O Apache acrescenta o IP real no fim do X-Forwarded-For; o começo pode ser forjado pelo cliente
     ip = req.headers.get("x-forwarded-for", req.client.host if req.client else "").split(",")[-1].strip()
-    chave = f"{ip}|{dados.email.lower()}"
-    if auth.bloqueado(chave):
+    email = dados.email.strip().lower()  # a mesma forma no bloqueio e na busca: espaços não ganham tentativas novas
+    chave, chave_ip = f"{ip}|{email}", f"ip|{ip}"
+    if auth.bloqueado(chave) or auth.bloqueado(chave_ip, 20):  # 5 por e-mail e 20 por IP a cada 5 min
         raise HTTPException(429, "Muitas tentativas. Aguarde 5 minutos e tente de novo.")
     with db() as con:
-        u = con.execute("select * from usuarios where lower(email)=?", (dados.email.lower().strip(),)).fetchone()
-        if not u or not auth.confere_senha(dados.senha, u["senha_hash"]):
+        u = con.execute("select * from usuarios where lower(email)=?", (email,)).fetchone()
+        # Sempre calcula o scrypt, mesmo sem usuário: o tempo de resposta não revela quais e-mails existem
+        if not auth.confere_senha(dados.senha, u["senha_hash"] if u else _SENHA_FALSA) or not u:
             auth.falhou(chave)
+            auth.falhou(chave_ip)
             raise HTTPException(401, "E-mail ou senha incorretos.")
         if not u["ativo"]:
             raise HTTPException(403, "Acesso desativado. Fale com o administrador do NOC.")
@@ -147,11 +155,12 @@ class TrocaSenha(BaseModel):
 
 
 @app.put("/api/eu/senha", status_code=204)
-def trocar_senha(dados: TrocaSenha, u=auth.exigir("visao")):
+def trocar_senha(dados: TrocaSenha, req: Request, u=auth.exigir("visao")):
     if not auth.confere_senha(dados.atual, u["senha_hash"]):
         raise HTTPException(400, "Senha atual incorreta.")
     with db() as con:
         con.execute("update usuarios set senha_hash=? where id=?", (auth.hash_senha(dados.nova), u["id"]))
+        auth.derrubar_outras_sessoes(con, req, u["id"])
 
 
 # ---------------------------------------------------------------- NOC
@@ -258,7 +267,7 @@ def abrir_chamado(c: NovoChamado, u=auth.exigir("abrir_chamado")):
         atendimento.registrar(con, cid, "abertura", u, f"{c.titulo}\n\n{c.descricao}", anexos.prender(con, c.anexos, u, cid))
         novo = atendimento.detalhe(con, cid, u)
     tempo_real.avisar("chamados")
-    telegram.para_equipe(f"🆕 <b>Chamado SG-{cid}</b> · {atendimento.IMPACTOS_NOME[c.impacto]}\n{c.titulo}{_clipe(c.anexos)}\n<i>Aberto por {u['nome']}</i>",
+    telegram.para_equipe(f"🆕 <b>Chamado SG-{cid}</b> · {atendimento.IMPACTOS_NOME[c.impacto]}\n{_e(c.titulo)}{_clipe(c.anexos)}\n<i>Aberto por {_e(u['nome'])}</i>",
                          tipo="chamados", exceto=u["id"])
     return novo
 
@@ -307,13 +316,13 @@ def comentar(cid: int, c: Comentario, u=auth.exigir("chamados")):
         novo = atendimento.detalhe(con, cid, u)
     tempo_real.avisar("chamados")
     if c.interno:
-        aviso = f"📝 <b>SG-{cid}</b> · nota interna de {u['nome']}\n{c.texto[:400]}{_clipe(c.anexos)}"
+        aviso = f"📝 <b>SG-{cid}</b> · nota interna de {_e(u['nome'])}\n{_e(c.texto[:400])}{_clipe(c.anexos)}"
         if ch.get("responsavel") and ch["responsavel"] != u["id"]:
             telegram.para_usuarios([ch["responsavel"]], aviso, tipo="chamados")
         elif not ch.get("responsavel"):
             telegram.para_equipe(aviso, tipo="chamados", exceto=u["id"])
         return novo
-    aviso = f"💬 <b>SG-{cid}</b> · {u['nome']} respondeu\n{c.texto[:400]}{_clipe(c.anexos)}"
+    aviso = f"💬 <b>SG-{cid}</b> · {_e(u['nome'])} respondeu\n{_e(c.texto[:400])}{_clipe(c.anexos)}"
     if u["papel"] != "Cliente":
         telegram.para_usuarios([ch["aberto_por"]], aviso, tipo="chamados")
     elif ch.get("responsavel"):
@@ -334,8 +343,8 @@ def mudar_status(cid: int, m: MudarStatus, u=auth.exigir("atender_chamado")):
         if ch["status"] != m.status:
             con.execute("update chamados_manuais set status=?, responsavel=coalesce(responsavel, ?) where id=?", (m.status, u["id"], cid))
             atendimento.registrar(con, cid, m.status, u)
-            texto = {"em_atendimento": f"🔧 <b>SG-{cid}</b> está em atendimento com {u['nome']}.",
-                     "resolvido": f"✅ <b>SG-{cid}</b> foi resolvido por {u['nome']}. Se o problema voltar, é só responder no painel.",
+            texto = {"em_atendimento": f"🔧 <b>SG-{cid}</b> está em atendimento com {_e(u['nome'])}.",
+                     "resolvido": f"✅ <b>SG-{cid}</b> foi resolvido por {_e(u['nome'])}. Se o problema voltar, é só responder no painel.",
                      "aberto": f"↩️ <b>SG-{cid}</b> voltou para aberto."}[m.status]
             telegram.para_usuarios([ch["aberto_por"]], texto, tipo="chamados")
             if m.status == "resolvido":
@@ -396,7 +405,7 @@ def criar_usuario(u: Usuario, _=auth.exigir("usuarios")):
 
 
 @app.put("/api/usuarios/{uid}")
-def editar_usuario(uid: int, u: Usuario, eu=auth.exigir("usuarios")):
+def editar_usuario(uid: int, u: Usuario, req: Request, eu=auth.exigir("usuarios")):
     with db() as con:
         if (u.papel != "Administrador" or not u.ativo) and not _admins_ativos(con, uid):
             raise HTTPException(409, "O NOC precisa de pelo menos um administrador ativo.")
@@ -410,7 +419,10 @@ def editar_usuario(uid: int, u: Usuario, eu=auth.exigir("usuarios")):
         if u.senha:
             con.execute("update usuarios set senha_hash=? where id=?", (auth.hash_senha(u.senha), uid))
         if u.senha or not u.ativo:  # derruba as sessões abertas dele
-            con.execute("delete from sessoes where usuario_id=? and usuario_id!=?", (uid, eu["id"]))
+            if uid == eu["id"]:
+                auth.derrubar_outras_sessoes(con, req, uid)
+            else:
+                con.execute("delete from sessoes where usuario_id=?", (uid,))
         return dict(con.execute(f"select {CAMPOS} from usuarios where id=?", (uid,)).fetchone())
 
 
@@ -423,7 +435,11 @@ def remover_usuario(uid: int, eu=auth.exigir("usuarios")):
         if alvo and alvo["papel"] == "Administrador" and not _admins_ativos(con, uid):
             raise HTTPException(409, "O NOC precisa de pelo menos um administrador ativo.")
         con.execute("delete from sessoes where usuario_id=?", (uid,))
+        # Nada fica ligado ao id: o SQLite reaproveita o maior id e o próximo usuário herdaria foto, códigos e anexos
+        con.execute("delete from telegram_codigos where usuario_id=?", (uid,))
+        con.execute("delete from anexos where enviado_por=? and chamado_id is null", (uid,))
         con.execute("delete from usuarios where id=?", (uid,))
+    (perfil.FOTOS / str(uid)).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------- interface compilada (produção)
